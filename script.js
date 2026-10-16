@@ -459,6 +459,7 @@ async function filterCommunity() {
   const matchedUsers = users.filter(u => u.name.toLowerCase().includes(kw) || u.email.toLowerCase().includes(kw));
 
   if (matchedUsers.length > 0) {
+    const isAdmin = currentUser && currentUser.isAdmin; // ตรวจสอบสิทธิ์ Admin
     searchResultsContainer.style.display = 'block';
     searchResultsContainer.innerHTML = `
       <h4 style="font-size:14px; margin-bottom:8px; color:var(--accent-sage);">👤 พบผู้ใช้งาน (${matchedUsers.length}):</h4>
@@ -466,7 +467,7 @@ async function filterCommunity() {
         ${matchedUsers.map(u => `
           <div style="background:white; padding:10px 14px; border-radius:8px; border:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center;">
             <div>
-              <strong>${u.name}</strong> <span style="font-size:12px; color:var(--text-muted);">(${u.email})</span>
+              <strong>${u.name}</strong>${isAdmin ? `<span style="font-size:12px; color:var(--text-muted);">(${u.email})</span>` : ''}
             </div>
             <button class="btn-primary" style="width:auto; padding:4px 12px; font-size:12px;" onclick="openUserProfileModal('${u.email}')">ดูโปรไฟล์</button>
           </div>
@@ -847,7 +848,8 @@ async function openUserProfileModal(userEmail) {
   }
 
   document.getElementById('viewProfileName').innerText = targetUser.name;
-  document.getElementById('viewProfileEmail').innerText = targetUser.email;
+  const isAdmin = currentUser && currentUser.isAdmin;
+  document.getElementById('viewProfileEmail').innerText = isAdmin ? targetUser.email : '';
   document.getElementById('viewProfileBio').innerText = targetUser.bio || 'ไม่มีข้อความแนะนำตัว';
 
   const followers = targetUser.followers || [];
@@ -941,11 +943,13 @@ async function renderChatUsersList() {
     return;
   }
 
+  const isAdmin = currentUser && currentUser.isAdmin; // ตรวจสอบสิทธิ์ Admin
+
   list.innerHTML = otherUsers.map(u => `
     <div style="background:white; padding:12px; border-radius:8px; margin-bottom:8px; border:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center;">
       <div>
         <strong>${u.name}</strong>
-        <p style="font-size:12px; color:var(--text-muted);">${u.email}</p>
+        ${isAdmin ? `<p style="font-size:12px; color:var(--text-muted);">${u.email}</p>` : ''}
       </div>
       <button class="btn-primary" style="width:auto; padding:6px 14px; font-size:12px;" onclick="openUserProfileModal('${u.email}')">ดูโปรไฟล์ / แชท</button>
     </div>
