@@ -29,12 +29,26 @@ const AVATAR_OPTIONS = [
 ];
 
 async function getCloudData(path) {
-  const data = localStorage.getItem('firebase_' + path);
-  return data ? JSON.parse(data) : null;
+  try {
+    const docRef = db.collection('learnful_cloud_data').doc(path);
+    const doc = await docRef.get();
+    if (doc.exists) {
+      return doc.data().value;
+    }
+    return null;
+  } catch (error) {
+    console.error("Error getting cloud data: ", error);
+    return null;
+  }
 }
 
 async function saveCloudData(path, data) {
-  localStorage.setItem('firebase_' + path, JSON.stringify(data));
+  try {
+    const docRef = db.collection('learnful_cloud_data').doc(path);
+    await docRef.set({ value: data });
+  } catch (error) {
+    console.error("Error saving cloud data: ", error);
+  }
 }
 
 async function ensureAdminAccount() {

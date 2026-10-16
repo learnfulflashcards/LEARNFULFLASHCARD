@@ -11,6 +11,22 @@
   <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="style.css">
+  <!-- Firebase App & Firestore SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyC3S1cCoYqUZGOz4gr1ybzn1JKSJPJPi14",
+      authDomain: "learnful-flashcard-new.firebaseapp.com",
+      projectId: "learnful-flashcard-new",
+      storageBucket: "learnful-flashcard-new.firebasestorage.app",
+      messagingSenderId: "244528248749",
+      appId: "1:244528248749:web:286c006d430d51dee75324",
+      measurementId: "G-PH2G2EETRK"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+  </script>
 </head>
 <body>
   
