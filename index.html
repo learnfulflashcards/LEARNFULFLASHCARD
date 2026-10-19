@@ -11,26 +11,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="style.css">
-  <!-- Firebase App & Firestore SDK -->
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-  <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyC3S1cCoYqUZGOz4gr1ybzn1JKSJPJPi14",
-      authDomain: "learnful-flashcard-new.firebaseapp.com",
-      projectId: "learnful-flashcard-new",
-      storageBucket: "learnful-flashcard-new.firebasestorage.app",
-      messagingSenderId: "244528248749",
-      appId: "1:244528248749:web:286c006d430d51dee75324",
-      measurementId: "G-PH2G2EETRK"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-  </script>
 </head>
 <body>
   
-  <!-- Modal แก้ไขข้อความ (โพสต์ หรือ คอมเมนต์) -->
+  <!-- Modal แก้ไขข้อความ -->
   <div id="editModal" class="modal" style="display: none;">
     <div class="modal-content" style="max-width: 450px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -101,9 +85,13 @@
         <i class="fa-solid fa-brain"></i>
         <span>Learnful</span>
       </div>
-      <nav class="nav-links">
+      <button class="mobile-menu-toggle" onclick="toggleMobileMenu()">
+        <i class="fa-solid fa-bars"></i>
+      </button>
+      <nav class="nav-links" id="navLinksContainer">
         <button class="nav-btn active" onclick="switchTab('dashboard')"><i class="fa-solid fa-chart-line"></i> ภาพรวม</button>
         <button class="nav-btn" onclick="switchTab('decks')"><i class="fa-solid fa-layer-group"></i> สำรับคำศัพท์</button>
+        <button class="nav-btn" onclick="switchTab('quizHub')"><i class="fa-solid fa-pen-to-square"></i> แบบทดสอบ</button>
         <button class="nav-btn" onclick="switchTab('feed')"><i class="fa-solid fa-newspaper"></i> โพสต์ชุมชน</button>
         <button class="nav-btn" onclick="switchTab('chatSelect')"><i class="fa-solid fa-comments"></i> แชท</button>
         <button class="nav-btn" id="btnNavAdmin" onclick="switchTab('admin')" style="display: none; color: var(--accent-terracotta);"><i class="fa-solid fa-user-shield"></i> แอดมิน</button>
@@ -124,6 +112,39 @@
           <h2 id="welcomeHeading">สวัสดี</h2>
           <p>มาทบทวนคำศัพท์ ค้นหาความรู้ และแบ่งปันสเปซแสนอบอุ่นด้วยกันวันนี้</p>
         </div>
+
+        <div class="stats-grid">
+          <div class="stat-card" style="border-left: 4px solid var(--accent-sage);">
+            <h4 style="font-size: 13px; color: var(--text-muted);">👥 สมาชิกทั้งหมด</h4>
+            <p id="totalUsersCount" style="font-size: 22px; font-weight: bold; margin-top: 4px;">0 คน</p>
+          </div>
+          <div class="stat-card" style="border-left: 4px solid #48BB78;">
+            <h4 style="font-size: 13px; color: var(--text-muted);">🟢 กำลังออนไลน์</h4>
+            <p id="onlineUsersCount" style="font-size: 22px; font-weight: bold; margin-top: 4px; color: #2F855A;">0 คน</p>
+          </div>
+        </div>
+
+        <h3 style="margin-bottom: 10px; font-size: 16px;">📊 สถิติการจำคำศัพท์ของคุณ</h3>
+        <div class="stats-grid">
+          <div class="stat-card" onclick="openWordListModal('studied')">
+            <h4 style="font-size: 13px; color: var(--text-muted);">เรียนไปแล้ว</h4>
+            <p id="statStudiedCount" style="font-size: 20px; font-weight: bold;">0 คำ</p>
+            <span style="font-size: 11px; color: var(--accent-sage);">คลิกดูรายการ</span>
+          </div>
+          <div class="stat-card" onclick="openWordListModal('remembered')" style="background: #F0FFF4;">
+            <h4 style="font-size: 13px; color: #2F855A;">จำได้แม่นยำ</h4>
+            <p id="statRememberedCount" style="font-size: 20px; font-weight: bold; color: #2F855A;">0 คำ</p>
+            <span style="font-size: 11px; color: #2F855A;">คลิกดูรายการ</span>
+          </div>
+          <div class="stat-card" onclick="openWordListModal('forgot')" style="background: #FFF5F5;">
+            <h4 style="font-size: 13px; color: #C53030;">ยังจำไม่ได้</h4>
+            <p id="statForgotCount" style="font-size: 20px; font-weight: bold; color: #C53030;">0 คำ</p>
+            <span style="font-size: 11px; color: #C53030;">คลิกดูรายการ</span>
+          </div>
+        </div>
+
+        <h3 style="margin: 20px 0 10px; font-size: 16px;"><i class="fa-solid fa-bullhorn" style="color: var(--accent-terracotta);"></i> บอร์ดประกาศจากแอดมิน</h3>
+        <div id="adminNoticeBoardContainer"></div>
       </section>
 
       <!-- 2. แท็บจัดการสำรับแฟลชการ์ด -->
@@ -132,19 +153,27 @@
           <h2>สำรับแฟลชการ์ดทั้งหมด</h2>
           <button class="btn-primary" style="width: auto;" onclick="openCreateDeckModal()"><i class="fa-solid fa-plus"></i> สร้างสำรับใหม่</button>
         </div>
-        <!-- ช่องค้นหาแฟลชการ์ด -->
         <div class="search-box-wrapper" style="margin-bottom: 20px;">
-          <input type="text" id="deckSearchInput" class="form-input" placeholder="🔍 ค้นหาสำรับคำศัพท์ตามชื่อ..." onkeyup="filterDecks()">
+          <input type="text" id="deckSearchInput" class="form-input" placeholder="🔍 ค้นหาสำรับคำศัพท์ตามชื่อหรือผู้สร้าง..." onkeyup="filterDecks()">
         </div>
         <div id="decksGrid" class="decks-grid"></div>
       </section>
 
-      <!-- 3. แท็บโพสต์ชุมชน & ค้นหาผู้ใช้งาน -->
+      <!-- 3. แท็บแบบทดสอบแยกอิสระ (Quiz Hub) -->
+      <section id="tab-quizHub" class="tab-content" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+          <h2>ศูนย์รวมแบบทดสอบ (Quiz Center)</h2>
+          <button class="btn-primary" style="width: auto;" onclick="openCreateCustomQuizModal()"><i class="fa-solid fa-plus"></i> สร้างชุดข้อสอบใหม่</button>
+        </div>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">ทำแบบทดสอบเพื่อวัดความรู้จากชุดข้อสอบที่สร้างขึ้นในระบบ</p>
+        <div id="quizHubGrid" class="decks-grid"></div>
+      </section>
+
+      <!-- 4. แท็บโพสต์ชุมชน & ค้นหาผู้ใช้งาน -->
       <section id="tab-feed" class="tab-content" style="display: none;">
         <div class="section-header" style="margin-bottom: 16px;">
           <h2>ศูนย์รวมการเรียนรู้ Learnful</h2>
         </div>
-        <!-- ช่องค้นหาผู้ใช้หรือโพสต์ -->
         <div class="search-box-wrapper" style="margin-bottom: 20px;">
           <input type="text" id="communitySearchInput" class="form-input" placeholder="🔍 ค้นหาชื่อผู้ใช้อื่นๆ หรือข้อความโพสต์..." onkeyup="filterCommunity()">
         </div>
@@ -161,20 +190,17 @@
           <div id="postImagesPreview" style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;"></div>
         </div>
 
-        <!-- รายการผลการค้นหาผู้ใช้งาน (ถ้ามี) -->
         <div id="userSearchResultsContainer" style="margin-bottom: 20px; display: none;"></div>
-
-        <!-- ฟีดโพสต์ -->
         <div id="feedContainer"></div>
       </section>
 
-      <!-- 4. แท็บห้องแชท -->
+      <!-- 5. แท็บห้องแชท -->
       <section id="tab-chatSelect" class="tab-content" style="display: none;">
-        <h2>ห้องสนทนาสเปซส่วนตัว</h2>
+        <h2>ห้องแชทส่วนตัว</h2>
         <div id="chatUsersList" style="margin-top: 16px;"></div>
       </section>
 
-      <!-- 5. แท็บแอดมิน -->
+      <!-- 6. แท็บแอดมิน -->
       <section id="tab-admin" class="tab-content" style="display: none;">
         <h2>แดชบอร์ดผู้ดูแลระบบ (Admin Panel)</h2>
         <div id="adminContainer" style="margin-top: 20px;"></div>
@@ -186,16 +212,24 @@
     </footer>
   </div>
 
-  <!-- Modal สร้างสำรับคำศัพท์และเพิ่มการ์ด -->
+  <!-- Modal สร้าง/แก้ไข สำรับคำศัพท์ -->
   <div id="createDeckModal" class="modal" style="display: none;">
     <div class="modal-content" style="max-width: 550px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <h3>สร้าง/แก้ไข สำรับแฟลชการ์ด</h3>
+        <h3 id="deckModalTitleText">สร้างสำรับแฟลชการ์ด</h3>
         <button onclick="closeCreateDeckModal()" style="background:none; border:none; cursor:pointer; font-size: 18px;"><i class="fa-solid fa-xmark"></i></button>
       </div>
+      <input type="hidden" id="editingDeckId" value="">
       <div class="form-group">
         <label>ชื่อสำรับคำศัพท์</label>
-        <input type="text" id="newDeckNameInput" class="form-input" placeholder="เช่น ศัพท์ JLPT N4, คำศัพท์ภาษาอังกฤษประจำวัน">
+        <input type="text" id="newDeckNameInput" class="form-input" placeholder="เช่น ศัพท์ JLPT N4">
+      </div>
+      <div class="form-group">
+        <label>การแสดงผล</label>
+        <select id="newDeckPrivacyInput" class="form-input">
+          <option value="public">🌏 สาธารณะ</option>
+          <option value="private">👤 ส่วนตัว</option>
+        </select>
       </div>
       <hr style="border: 0; border-top: 1px solid var(--border-subtle); margin: 16px 0;">
       <h4>เพิ่มคำศัพท์ในการ์ด</h4>
@@ -208,7 +242,7 @@
         <input type="text" id="newCardA" class="form-input" placeholder="เช่น สวัสดี">
       </div>
       <div class="form-group">
-        <label>แนบรูปภาพประกอบ (1 รูป)</label>
+        <label>แนบรูปภาพประกอบ (1 รูป ไม่บังคับ)</label>
         <input type="file" id="newCardImgFile" accept="image/*" class="form-input" onchange="handleCardImageUpload(event)">
         <div id="cardImgPreviewContainer" style="margin-top: 8px; display: none;">
           <img id="cardImgPreview" src="" style="max-height: 80px; border-radius: 6px;">
@@ -220,7 +254,52 @@
         <p style="font-size: 12px; color: var(--text-muted); text-align: center;">ยังไม่มีการ์ดถูกเพิ่ม</p>
       </div>
 
-      <button class="btn-primary" style="width: 100%;" onclick="saveNewDeck()">บันทึกสร้างสำรับนี้</button>
+      <button class="btn-primary" style="width: 100%;" onclick="saveNewDeck()">บันทึกสำรับนี้</button>
+    </div>
+  </div>
+
+  <!-- Modal สร้างชุดข้อสอบแยกอิสระ (พร้อมรูปภาพประกอบ) -->
+  <div id="createCustomQuizModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 550px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 id="quizModalTitleText">สร้างชุดข้อสอบใหม่</h3>
+        <button onclick="document.getElementById('createCustomQuizModal').style.display='none'" style="background:none; border:none; cursor:pointer; font-size:18px;"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <input type="hidden" id="editingQuizId" value="">
+      <div class="form-group">
+        <label>ชื่อชุดข้อสอบ</label>
+        <input type="text" id="customQuizTitleInput" class="form-input" placeholder="เช่น ข้อสอบภาษาญี่ปุ่นเบื้องต้น">
+      </div>
+      <hr style="border: 0; border-top: 1px solid var(--border-subtle); margin: 12px 0;">
+      <h4>เพิ่มข้อสอบปรนัย (Multiple Choice)</h4>
+      <div class="form-group" style="margin-top: 8px;">
+        <label>คำถาม</label>
+        <textarea id="customQuizQ" class="form-input" rows="2" placeholder="คำถาม..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>แนบรูปภาพประกอบข้อสอบ (ไม่บังคับ)</label>
+        <input type="file" id="customQuizImgFile" accept="image/*" class="form-input" onchange="handleQuizImgUpload(event)">
+        <div id="quizImgPreviewContainer" style="margin-top: 8px; display: none;">
+          <img id="quizImgPreview" src="" style="max-height: 80px; border-radius: 6px;">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>คำตอบที่ถูกต้อง</label>
+        <input type="text" id="customQuizCorrectA" class="form-input" placeholder="เฉลยที่ถูกต้อง">
+      </div>
+      <div class="form-group">
+        <label>ตัวเลือกผิด 1</label>
+        <input type="text" id="customQuizWrong1" class="form-input" placeholder="ตัวลวงที่ 1">
+      </div>
+      <div class="form-group">
+        <label>ตัวเลือกผิด 2</label>
+        <input type="text" id="customQuizWrong2" class="form-input" placeholder="ตัวลวงที่ 2">
+      </div>
+      <button class="btn-secondary" style="width: 100%; margin-bottom: 10px;" onclick="addCustomQuizQuestion()"><i class="fa-solid fa-plus"></i> เพิ่มข้อนี้ลงในชุด</button>
+      <div style="max-height: 120px; overflow-y: auto; background: var(--bg-main); padding: 8px; border-radius: 6px; margin-bottom: 12px;" id="tempCustomQuizList">
+        <p style="font-size: 11px; color: var(--text-muted); text-align: center;">ยังไม่มีข้อสอบ</p>
+      </div>
+      <button class="btn-primary" onclick="saveCustomQuiz()">บันทึกชุดข้อสอบ</button>
     </div>
   </div>
 
@@ -228,14 +307,19 @@
   <div id="studyModal" class="modal" style="display: none;">
     <div class="modal-content" style="max-width: 650px; text-align: center;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <span id="studyDeckTitle" style="font-weight: 600; color: var(--accent-terracotta);"></span>
-        <span id="studyViewerCount" style="font-size: 12px; background: var(--bg-main); padding: 4px 10px; border-radius: 12px; color: var(--text-muted);">
-          <i class="fa-solid fa-users"></i> เข้าใช้งานแล้ว 0 คน
-        </span>
-        <button onclick="closeStudyModal()" style="background: none; border: none; font-size: 18px; cursor: pointer;"><i class="fa-solid fa-xmark"></i></button>
+        <div>
+          <span id="studyDeckTitle" style="font-weight: 600; color: var(--accent-terracotta);"></span>
+          <p id="studyDeckAuthor" style="font-size: 11px; color: var(--text-muted); text-align: left;"></p>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span id="studyViewerCount" style="font-size: 12px; background: var(--bg-main); padding: 4px 10px; border-radius: 12px; color: var(--text-muted);">
+            <i class="fa-solid fa-users"></i> 0
+          </span>
+          <button onclick="closeStudyModal()" style="background: none; border: none; font-size: 18px; cursor: pointer;"><i class="fa-solid fa-xmark"></i></button>
+        </div>
       </div>
 
-      <div id="flashcardBox" class="flashcard-box" onclick="flipCard()" style="min-height: 280px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; background: #FFFDF9; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); cursor: pointer; position: relative;">
+      <div id="flashcardBox" class="flashcard-box" onclick="flipCard()" style="min-height: 260px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; background: #FFFDF9; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); cursor: pointer; position: relative;">
         <div id="cardImageContainer" style="margin-bottom: 12px; display: none;">
           <img id="cardDisplayImg" src="" style="max-height: 140px; max-width: 100%; border-radius: 8px; object-fit: cover;">
         </div>
@@ -246,14 +330,97 @@
         </button>
       </div>
 
-      <div style="display: flex; justify-content: center; gap: 12px; margin-top: 20px;">
+      <div style="display: flex; justify-content: center; gap: 12px; margin-top: 16px;">
         <button class="btn-secondary" onclick="rateCard(1)">ยังจำไม่ได้</button>
         <button class="btn-primary" style="width: auto;" onclick="rateCard(4)">จำได้แม่นยำแล้ว</button>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--border-subtle);">
+        <button id="studyLikeBtn" onclick="toggleLikeDeck()" style="background:none; border:none; cursor:pointer; font-size: 14px; color: var(--text-muted);">
+          <i class="fa-solid fa-heart"></i> ถูกใจ (<span id="studyLikeCount">0</span>)
+        </button>
+        <button onclick="reportDeck()" style="background:none; border:none; cursor:pointer; font-size: 12px; color: #D9534F;">
+          <i class="fa-solid fa-flag"></i> รายงานสำรับนี้
+        </button>
+      </div>
+
+      <div style="margin-top: 12px; text-align: left;">
+        <h4 style="font-size: 13px; margin-bottom: 6px;">ความคิดเห็นในสำรับนี้</h4>
+        <div id="deckCommentsContainer" style="max-height: 120px; overflow-y: auto; margin-bottom: 8px;"></div>
+        <div style="display: flex; gap: 6px;">
+          <input type="text" id="deckCommentInput" class="form-input" placeholder="แสดงความคิดเห็นสำรับนี้..." style="font-size: 12px; padding: 6px 10px;">
+          <button class="btn-primary" style="width: auto; padding: 6px 14px; font-size: 12px;" onclick="addDeckComment()">ส่ง</button>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Modal ดูโปรไฟล์ผู้ใช้อื่นๆ (มีปุ่มแชท + โชว์สำรับเปิดฟรี + โพสต์ + ยอดติดตาม) -->
+  <!-- Modal ตั้งค่า Quiz -->
+  <div id="quizSetupModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 400px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3>ตั้งค่าเวลาทำแบบทดสอบ</h3>
+        <button onclick="document.getElementById('quizSetupModal').style.display='none'" style="background:none; border:none; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="form-group">
+        <label>เวลาทำข้อสอบ</label>
+        <select id="quizTimeSelect" class="form-input">
+          <option value="1">1 นาที</option>
+          <option value="5" selected>5 นาที</option>
+          <option value="10">10 นาที</option>
+          <option value="30">30 นาที</option>
+          <option value="60">1 ชั่วโมง</option>
+          <option value="0">ไม่จำกัดเวลา</option>
+        </select>
+      </div>
+      <button class="btn-primary" onclick="confirmStartQuiz()">เริ่มทำข้อสอบ</button>
+    </div>
+  </div>
+
+  <!-- Modal หน้าทำ Quiz -->
+  <div id="quizModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 600px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 6px;">
+        <div>
+          <h3 id="quizTitle">แบบทดสอบ</h3>
+          <p id="quizAuthorDisplay" style="font-size: 11px; color: var(--text-muted);"></p>
+        </div>
+        <span id="quizTimerDisplay" style="font-weight: bold; color: var(--accent-terracotta);">⏱️ --:--</span>
+      </div>
+      <div id="quizBody"></div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--border-subtle);">
+        <button id="quizLikeBtn" onclick="toggleLikeQuiz()" style="background:none; border:none; cursor:pointer; font-size: 13px; color: var(--text-muted);">
+          <i class="fa-solid fa-heart"></i> ถูกใจ (<span id="quizLikeCount">0</span>)
+        </button>
+        <button onclick="reportQuiz()" style="background:none; border:none; cursor:pointer; font-size: 12px; color: #D9534F;">
+          <i class="fa-solid fa-flag"></i> รายงานข้อสอบนี้
+        </button>
+      </div>
+
+      <div style="margin-top: 12px;">
+        <h4 style="font-size: 13px; margin-bottom: 6px;">ความคิดเห็นชุดข้อสอบ</h4>
+        <div id="quizCommentsContainer" style="max-height: 100px; overflow-y: auto; margin-bottom: 6px;"></div>
+        <div style="display: flex; gap: 6px;">
+          <input type="text" id="quizCommentInput" class="form-input" placeholder="แสดงความเห็นข้อสอบ..." style="font-size: 12px; padding: 6px 10px;">
+          <button class="btn-primary" style="width: auto; padding: 6px 14px; font-size: 12px;" onclick="addQuizComment()">ส่ง</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal ดูรายการคำศัพท์ตามสถิติ -->
+  <div id="wordListModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 450px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 id="wordListTitle">รายการคำศัพท์</h3>
+        <button onclick="document.getElementById('wordListModal').style.display='none'" style="background:none; border:none; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div id="wordListContainer" style="max-height: 300px; overflow-y: auto;"></div>
+    </div>
+  </div>
+
+  <!-- Modal ดูโปรไฟล์ผู้ใช้อื่นๆ -->
   <div id="userProfileModal" class="modal" style="display: none;">
     <div class="modal-content" style="max-width: 550px; max-height: 90vh; overflow-y: auto;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -265,15 +432,16 @@
         <div id="viewProfileAvatar" style="width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 10px; background: var(--accent-sage); display: flex; align-items: center; justify-content: center; color: white; font-size: 32px; overflow: hidden;"></div>
         <h4 id="viewProfileName" style="font-size: 18px;"></h4>
         <p id="viewProfileEmail" style="font-size: 13px; color: var(--text-muted);"></p>
+        <div style="margin: 8px 0;">
+          <span id="viewProfileOnlineStatus" class="online-dot offline"></span> <span id="viewProfileStatusText" style="font-size: 12px; color: var(--text-muted);">ออฟไลน์</span>
+        </div>
         <p id="viewProfileBio" style="font-size: 14px; margin-top: 8px; color: var(--text-main); background: var(--bg-main); padding: 8px; border-radius: 8px;"></p>
 
-        <!-- ยอดผู้ติดตาม และจำนวนที่ติดตาม -->
         <div style="display: flex; justify-content: center; gap: 20px; margin: 14px 0; font-size: 14px;">
           <div><strong id="viewProfileFollowersCount">0</strong> <span style="color:var(--text-muted);">ผู้ติดตาม</span></div>
           <div><strong id="viewProfileFollowingCount">0</strong> <span style="color:var(--text-muted);">กำลังติดตาม</span></div>
         </div>
 
-        <!-- ปุ่มกดติดตาม และปุ่มแชท -->
         <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 16px;">
           <button id="btnFollowUser" class="btn-primary" style="width: auto; padding: 6px 18px;" onclick="toggleFollowUser()">ติดตาม</button>
           <button id="btnChatWithUser" class="btn-secondary" style="width: auto; padding: 6px 18px;" onclick="openChatWithUser()"><i class="fa-solid fa-comments"></i> ส่งข้อความแชท</button>
@@ -282,11 +450,9 @@
 
       <hr style="border: 0; border-top: 1px solid var(--border-subtle); margin: 16px 0;">
 
-      <!-- โชว์สำรับแฟลชการ์ดที่เปิดให้ใช้ฟรีของผู้ใช้นี้ -->
-      <h4 style="margin-bottom: 10px;"><i class="fa-solid fa-layer-group"></i> แฟลชการ์ดเปิดให้ใช้งานฟรี</h4>
+      <h4 style="margin-bottom: 10px;"><i class="fa-solid fa-layer-group"></i> แฟลชการ์ดสาธารณะ</h4>
       <div id="viewUserDecksList" style="margin-bottom: 16px;"></div>
 
-      <!-- โชว์โพสต์ทั้งหมดของผู้ใช้นี้ -->
       <h4 style="margin-bottom: 10px;"><i class="fa-solid fa-newspaper"></i> โพสต์ทั้งหมดของผู้ใช้นี้</h4>
       <div id="viewUserPostsList"></div>
     </div>
@@ -340,7 +506,7 @@
         <p>1. เคารพซึ่งกันและกัน ห้ามใช้คำหยาบ บูลลี่ หรือสร้างความเกลียดชัง</p>
         <p>2. รูปโปรไฟล์ต้องเหมาะสม และรูปใหม่จะต้องรอแอดมินตรวจสอบอนุมัติภายใน 1-2 วัน</p>
         <p>3. โพสต์บทความพร้อมรูปภาพประกอบได้ไม่เกิน 5 รูปต่อโพสต์</p>
-        <p>4. สามารถกดรายงานเนื้อหาหรือโปรไฟล์ที่ไม่เหมาะสมได้ โดยระบบจะแจ้งแอดมินเพื่อตรวจสอบภายใน 1-2 วัน</p>
+        <p>4. สามารถรายงานเนื้อหาหรือโปรไฟล์ที่ไม่เหมาะสมได้ โดยระบบจะแจ้งแอดมินเพื่อตรวจสอบภายใน 1-2 วัน</p>
       </div>
       <button class="btn-primary" style="width: 100%;" onclick="closeTermsModal(event)">เข้าใจและปิดหน้าต่าง</button>
     </div>

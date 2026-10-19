@@ -1,9 +1,11 @@
 const STORAGE_USERS = 'Learnful_flash_users';
 const STORAGE_CURRENT_USER = 'Learnful_flash_session';
-const STORAGE_DECKS = 'Learnful_flash_decks_';
+const STORAGE_DECKS = 'Learnful_flash_all_decks';
 const STORAGE_POSTS = 'Learnful_flash_posts';
 const STORAGE_REPORTS = 'Learnful_flash_reports';
 const STORAGE_CHATS = 'Learnful_flash_chats';
+const STORAGE_QUIZZES = 'Learnful_flash_custom_quizzes';
+const STORAGE_PROGRESS = 'Learnful_flash_word_progress_';
 
 let currentUser = null;
 let selectedAvatar = { icon: 'fa-user', bg: '#7A9A83' };
@@ -20,6 +22,11 @@ let viewTargetUser = null;
 let activeChatEmail = null;
 let currentEditData = { type: null, postId: null, commentId: null, replyId: null };
 
+let activeQuizId = null;
+let quizState = { timer: null, timeLeft: 0, questions: [] };
+let tempCustomQuizQuestions = [];
+let tempQuizImage = null;
+
 const AVATAR_OPTIONS = [
   { icon: 'fa-user', bg: '#7A9A83' },
   { icon: 'fa-cat', bg: '#D97757' },
@@ -29,26 +36,12 @@ const AVATAR_OPTIONS = [
 ];
 
 async function getCloudData(path) {
-  try {
-    const docRef = db.collection('learnful_cloud_data').doc(path);
-    const doc = await docRef.get();
-    if (doc.exists) {
-      return doc.data().value;
-    }
-    return null;
-  } catch (error) {
-    console.error("Error getting cloud data: ", error);
-    return null;
-  }
+  const data = localStorage.getItem('firebase_' + path);
+  return data ? JSON.parse(data) : null;
 }
 
 async function saveCloudData(path, data) {
-  try {
-    const docRef = db.collection('learnful_cloud_data').doc(path);
-    await docRef.set({ value: data });
-  } catch (error) {
-    console.error("Error saving cloud data: ", error);
-  }
+  localStorage.setItem('firebase_' + path, JSON.stringify(data));
 }
 
 async function ensureAdminAccount() {
@@ -63,7 +56,8 @@ async function ensureAdminAccount() {
       avatarStatus: 'approved',
       customImg: null,
       followers: [],
-      following: []
+      following: [],
+      lastActive: Date.now()
     });
     await saveCloudData(STORAGE_USERS, users);
     localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
@@ -74,7 +68,23 @@ ensureAdminAccount();
 document.addEventListener('DOMContentLoaded', () => {
   renderAvatarPicker();
   checkSession();
+  setInterval(updateOnlineHeartbeat, 60000);
 });
+
+async function updateOnlineHeartbeat() {
+  if (!currentUser) return;
+  let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
+  let idx = users.findIndex(u => u.email.toLowerCase() === currentUser.email.toLowerCase());
+  if (idx !== -1) {
+    users[idx].lastActive = Date.now();
+    await saveCloudData(STORAGE_USERS, users);
+    localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
+  }
+}
+
+function toggleMobileMenu() {
+  document.getElementById('navLinksContainer').classList.toggle('show');
+}
 
 function switchAuthTab(tab) {
   const isReg = tab === 'register';
@@ -145,9 +155,10 @@ async function handleAuth(e) {
       avatar: selectedAvatar,
       customImg: null,
       avatarStatus: 'approved',
-      bio: 'สวัสดี ฉันใช้ Learnful',
+      bio: 'สวัสดี ผู้ไขว่คว้าความรู้ทุกคน',
       followers: [],
-      following: []
+      following: [],
+      lastActive: Date.now()
     };
     
     users.push(newUser);
@@ -161,7 +172,7 @@ async function handleAuth(e) {
   }
 }
 
-function loginUser(user) {
+async function loginUser(user) {
   currentUser = user;
   localStorage.setItem(STORAGE_CURRENT_USER, JSON.stringify(user));
   document.getElementById('authScreen').style.display = 'none';
@@ -170,8 +181,8 @@ function loginUser(user) {
   if (currentUser.isAdmin) {
     document.getElementById('btnNavAdmin').style.display = 'inline-block';
   }
+  await updateOnlineHeartbeat();
   updateProfileDisplay();
-  loadDecks();
   switchTab('dashboard');
 }
 
@@ -189,12 +200,18 @@ function logout() {
 function switchTab(tabName) {
   document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
   document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('navLinksContainer').classList.remove('show');
 
   if (tabName === 'dashboard') {
     document.getElementById('tab-dashboard').style.display = 'block';
+    renderDashboardStats();
+    renderAdminNoticeBoard();
   } else if (tabName === 'decks') {
     document.getElementById('tab-decks').style.display = 'block';
     loadDecks();
+  } else if (tabName === 'quizHub') {
+    document.getElementById('tab-quizHub').style.display = 'block';
+    renderQuizHub();
   } else if (tabName === 'feed') {
     document.getElementById('tab-feed').style.display = 'block';
     renderFeed();
@@ -219,28 +236,117 @@ function updateProfileDisplay() {
   document.getElementById('welcomeHeading').innerText = `สวัสดีคุณ ${currentUser.name}`;
 }
 
+async function renderDashboardStats() {
+  let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
+  document.getElementById('totalUsersCount').innerText = `${users.length} คน`;
+
+  const now = Date.now();
+  const onlineCount = users.filter(u => u.lastActive && (now - u.lastActive < 180000)).length;
+  document.getElementById('onlineUsersCount').innerText = `${onlineCount} คน`;
+
+  const progressPath = STORAGE_PROGRESS + currentUser.email;
+  const progress = await getCloudData(progressPath) || JSON.parse(localStorage.getItem(progressPath) || '{}');
+  
+  let studied = Object.keys(progress).length;
+  let remembered = Object.values(progress).filter(v => v === 'remembered').length;
+  let forgot = Object.values(progress).filter(v => v === 'forgot').length;
+
+  document.getElementById('statStudiedCount').innerText = `${studied} คำ`;
+  document.getElementById('statRememberedCount').innerText = `${remembered} คำ`;
+  document.getElementById('statForgotCount').innerText = `${forgot} คำ`;
+}
+
+async function renderAdminNoticeBoard() {
+  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let adminPosts = posts.filter(p => p.authorEmail === 'learnful.flashcard.official@gmail.com' || p.authorName === 'Admin Learnful');
+
+  const container = document.getElementById('adminNoticeBoardContainer');
+  if (adminPosts.length === 0) {
+    container.innerHTML = `<p style="font-size:13px; color:var(--text-muted); text-align:center; padding: 20px;">ยังไม่มีประกาศจากแอดมิน</p>`;
+    return;
+  }
+
+  container.innerHTML = adminPosts.map(p => `
+    <div class="post-card" style="border-left: 4px solid var(--accent-terracotta);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <strong style="color:var(--accent-terracotta);">🛡️ ${p.authorName} (ประกาศระบบ)</strong>
+        <span style="font-size: 11px; color: var(--text-muted);">${p.createdAt}</span>
+      </div>
+      <p style="font-size: 14px; margin-bottom: 10px; white-space: pre-line;">${p.content}</p>
+      ${p.images && p.images.length > 0 ? `<div class="post-images-grid">${p.images.map(img => `<img src="${img}">`).join('')}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+async function openWordListModal(type) {
+  const progressPath = STORAGE_PROGRESS + currentUser.email;
+  const progress = await getCloudData(progressPath) || JSON.parse(localStorage.getItem(progressPath) || '{}');
+  
+  const titleMap = { studied: 'คำศัพท์ที่เรียนทั้งหมด', remembered: 'คำศัพท์ที่จำได้แม่นยำ', forgot: 'คำศัพท์ที่ยังจำไม่ได้' };
+  document.getElementById('wordListTitle').innerText = titleMap[type];
+
+  let filteredWords = Object.entries(progress).filter(([word, status]) => {
+    if (type === 'studied') return true;
+    return status === type;
+  });
+
+  const container = document.getElementById('wordListContainer');
+  if (filteredWords.length === 0) {
+    container.innerHTML = `<p style="font-size:13px; color:var(--text-muted); text-align:center; padding: 20px;">ไม่พบรายการคำศัพท์</p>`;
+  } else {
+    container.innerHTML = filteredWords.map(([qa]) => {
+      let parts = qa.split('|||');
+      return `
+        <div style="background: var(--bg-main); padding: 10px; border-radius: 6px; margin-bottom: 6px; font-size: 13px; display: flex; justify-content: space-between;">
+          <span><strong>Q:</strong> ${parts[0]}</span>
+          <span><strong>A:</strong> ${parts[1] || ''}</span>
+        </div>
+      `;
+    }).join('');
+  }
+  document.getElementById('wordListModal').style.display = 'flex';
+}
+
+// -------------------------------------------------------------
+// แฟลชการ์ด (เด็คคำศัพท์)
+// -------------------------------------------------------------
 async function loadDecks(searchKeyword = '') {
-  const path = STORAGE_DECKS + currentUser.email;
-  const decks = await getCloudData(path) || JSON.parse(localStorage.getItem(path) || '[]');
+  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
   const grid = document.getElementById('decksGrid');
 
-  const filteredDecks = decks.filter(d => d.name.toLowerCase().includes(searchKeyword.toLowerCase()));
+  const visibleDecks = decks.filter(d => {
+    const isMine = d.authorEmail === currentUser.email;
+    const isPublic = d.privacy !== 'private';
+    return isMine || isPublic;
+  });
+
+  const filteredDecks = visibleDecks.filter(d => 
+    d.name.toLowerCase().includes(searchKeyword.toLowerCase()) || 
+    (d.authorName && d.authorName.toLowerCase().includes(searchKeyword.toLowerCase()))
+  );
 
   if (filteredDecks.length === 0) {
     grid.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 40px 0;">ไม่พบสำรับคำศัพท์ กดปุ่ม "สร้างสำรับใหม่" เพื่อเริ่มต้นได้เลย</p>`;
     return;
   }
 
-  grid.innerHTML = filteredDecks.map(d => `
-    <div class="deck-card">
-      <h3>${d.name}</h3>
-      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">จำนวนการ์ด: ${d.cards ? d.cards.length : 0} ใบ | เข้าใช้แล้ว: ${d.viewCount || 0} ครั้ง</p>
-      <div style="display: flex; gap: 8px;">
-        <button class="btn-primary" onclick="startStudy('${d.id}')">เริ่มเรียน</button>
-        <button class="btn-secondary" onclick="deleteDeck('${d.id}')"><i class="fa-solid fa-trash"></i></button>
+  grid.innerHTML = filteredDecks.map(d => {
+    const isMine = d.authorEmail === currentUser.email;
+    return `
+      <div class="deck-card" style="border-left: 4px solid ${d.privacy === 'private' ? 'var(--text-muted)' : 'var(--accent-sage)'};">
+        <h3>${d.name}</h3>
+        <p style="font-size: 12px; color: var(--accent-sage); margin-bottom: 4px;">สร้างโดย: ${d.authorName || 'ไม่ระบุ'} ${d.privacy === 'private' ? '🔒 (ส่วนตัว)' : '🌍 (สาธารณะ)'}</p>
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">การ์ด: ${d.cards ? d.cards.length : 0} ใบ | ❤️ ${d.likes ? d.likes.length : 0} | เข้าใช้: ${d.viewCount || 0}</p>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn-primary" onclick="startStudy('${d.id}')">เริ่มเรียน</button>
+          ${isMine ? `
+            <button class="btn-secondary" onclick="openEditDeckModal('${d.id}')"><i class="fa-solid fa-pen"></i></button>
+            <button class="btn-secondary" onclick="deleteDeck('${d.id}')"><i class="fa-solid fa-trash"></i></button>
+          ` : ''}
+        </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 function filterDecks() {
@@ -249,11 +355,30 @@ function filterDecks() {
 }
 
 function openCreateDeckModal() {
+  document.getElementById('deckModalTitleText').innerText = 'สร้างสำรับแฟลชการ์ด';
+  document.getElementById('editingDeckId').value = '';
   tempDeckCards = [];
   tempCardImage = null;
   document.getElementById('newDeckNameInput').value = '';
+  document.getElementById('newDeckPrivacyInput').value = 'public';
   document.getElementById('newCardQ').value = '';
   document.getElementById('newCardA').value = '';
+  document.getElementById('cardImgPreviewContainer').style.display = 'none';
+  renderTempCards();
+  document.getElementById('createDeckModal').style.display = 'flex';
+}
+
+async function openEditDeckModal(deckId) {
+  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+  const deck = decks.find(d => d.id === deckId);
+  if (!deck) return;
+
+  document.getElementById('deckModalTitleText').innerText = 'แก้ไขสำรับแฟลชการ์ด';
+  document.getElementById('editingDeckId').value = deck.id;
+  document.getElementById('newDeckNameInput').value = deck.name;
+  document.getElementById('newDeckPrivacyInput').value = deck.privacy || 'public';
+  tempDeckCards = [...(deck.cards || [])];
+  tempCardImage = null;
   document.getElementById('cardImgPreviewContainer').style.display = 'none';
   renderTempCards();
   document.getElementById('createDeckModal').style.display = 'flex';
@@ -310,45 +435,59 @@ function removeTempCard(index) {
 
 async function saveNewDeck() {
   const name = document.getElementById('newDeckNameInput').value.trim();
+  const privacy = document.getElementById('newDeckPrivacyInput').value;
+  const editingId = document.getElementById('editingDeckId').value;
+
   if (!name) return alert('กรุณาตั้งชื่อสำรับคำศัพท์');
   if (tempDeckCards.length === 0) return alert('กรุณาเพิ่มการ์ดอย่างน้อย 1 ใบ');
 
-  const path = STORAGE_DECKS + currentUser.email;
-  let decks = await getCloudData(path) || JSON.parse(localStorage.getItem(path) || '[]');
-  decks.push({
-    id: 'deck_' + Date.now(),
-    name,
-    cards: tempDeckCards,
-    viewCount: 0
-  });
+  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+
+  if (editingId) {
+    let deck = decks.find(d => d.id === editingId);
+    if (deck) {
+      deck.name = name;
+      deck.privacy = privacy;
+      deck.cards = tempDeckCards;
+    }
+  } else {
+    decks.push({
+      id: 'deck_' + Date.now(),
+      name,
+      privacy,
+      authorEmail: currentUser.email,
+      authorName: currentUser.name,
+      cards: tempDeckCards,
+      viewCount: 0,
+      likes: [],
+      comments: []
+    });
+  }
   
-  await saveCloudData(path, decks);
-  localStorage.setItem(path, JSON.stringify(decks));
+  await saveCloudData(STORAGE_DECKS, decks);
+  localStorage.setItem(STORAGE_DECKS, JSON.stringify(decks));
   closeCreateDeckModal();
   loadDecks();
 }
 
 async function deleteDeck(id) {
   if (!confirm('ยืนยันลบสำรับนี้?')) return;
-  const path = STORAGE_DECKS + currentUser.email;
-  let decks = await getCloudData(path) || JSON.parse(localStorage.getItem(path) || '[]');
+  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
   decks = decks.filter(d => d.id !== id);
   
-  await saveCloudData(path, decks);
-  localStorage.setItem(path, JSON.stringify(decks));
+  await saveCloudData(STORAGE_DECKS, decks);
+  localStorage.setItem(STORAGE_DECKS, JSON.stringify(decks));
   loadDecks();
 }
 
-async function startStudy(deckId, ownerEmail = null) {
-  const targetEmail = ownerEmail || currentUser.email;
-  const path = STORAGE_DECKS + targetEmail;
-  let decks = await getCloudData(path) || JSON.parse(localStorage.getItem(path) || '[]');
+async function startStudy(deckId) {
+  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
   const deck = decks.find(d => d.id === deckId);
   if (!deck || !deck.cards || deck.cards.length === 0) return alert('สำรับนี้ไม่มีการ์ดคำศัพท์');
 
   deck.viewCount = (deck.viewCount || 0) + 1;
-  await saveCloudData(path, decks);
-  localStorage.setItem(path, JSON.stringify(decks));
+  await saveCloudData(STORAGE_DECKS, decks);
+  localStorage.setItem(STORAGE_DECKS, JSON.stringify(decks));
 
   currentStudyDeck = deck;
   studyQueue = [...deck.cards];
@@ -356,7 +495,12 @@ async function startStudy(deckId, ownerEmail = null) {
   isShowingAnswer = false;
 
   document.getElementById('studyDeckTitle').innerText = deck.name;
-  document.getElementById('studyViewerCount').innerHTML = `<i class="fa-solid fa-users"></i> เข้าใช้งานแล้ว ${deck.viewCount} คน`;
+  document.getElementById('studyDeckAuthor').innerText = `สร้างโดย: ${deck.authorName || 'ไม่ระบุ'}`;
+  document.getElementById('studyViewerCount').innerHTML = `<i class="fa-solid fa-users"></i> ${deck.viewCount}`;
+  
+  updateDeckLikeUI();
+  renderDeckComments();
+
   document.getElementById('studyModal').style.display = 'flex';
   showCurrentCard();
 }
@@ -381,7 +525,17 @@ function flipCard() {
   showCurrentCard();
 }
 
-function rateCard(rating) {
+async function rateCard(rating) {
+  const card = studyQueue[studyIndex];
+  const progressPath = STORAGE_PROGRESS + currentUser.email;
+  let progress = await getCloudData(progressPath) || JSON.parse(localStorage.getItem(progressPath) || '{}');
+  
+  const key = `${card.q}|||${card.a}`;
+  progress[key] = (rating === 4) ? 'remembered' : 'forgot';
+
+  await saveCloudData(progressPath, progress);
+  localStorage.setItem(progressPath, JSON.stringify(progress));
+
   studyIndex++;
   isShowingAnswer = false;
   if (studyIndex < studyQueue.length) {
@@ -394,6 +548,7 @@ function rateCard(rating) {
 
 function closeStudyModal() {
   document.getElementById('studyModal').style.display = 'none';
+  loadDecks();
 }
 
 function speakCurrentCardText() {
@@ -407,6 +562,392 @@ function speakCurrentCardText() {
   window.speechSynthesis.speak(utterance);
 }
 
+async function toggleLikeDeck() {
+  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+  const deck = decks.find(d => d.id === currentStudyDeck.id);
+  if (!deck) return;
+
+  deck.likes = deck.likes || [];
+  const idx = deck.likes.indexOf(currentUser.email);
+  if (idx > -1) deck.likes.splice(idx, 1);
+  else deck.likes.push(currentUser.email);
+
+  currentStudyDeck = deck;
+  await saveCloudData(STORAGE_DECKS, decks);
+  localStorage.setItem(STORAGE_DECKS, JSON.stringify(decks));
+  updateDeckLikeUI();
+}
+
+function updateDeckLikeUI() {
+  const likes = currentStudyDeck.likes || [];
+  const isLiked = likes.includes(currentUser.email);
+  const btn = document.getElementById('studyLikeBtn');
+  btn.style.color = isLiked ? 'var(--accent-terracotta)' : 'var(--text-muted)';
+  document.getElementById('studyLikeCount').innerText = likes.length;
+}
+
+async function addDeckComment() {
+  const input = document.getElementById('deckCommentInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+  const deck = decks.find(d => d.id === currentStudyDeck.id);
+  if (!deck) return;
+
+  deck.comments = deck.comments || [];
+  deck.comments.push({ name: currentUser.name, text, time: new Date().toLocaleDateString() });
+
+  currentStudyDeck = deck;
+  await saveCloudData(STORAGE_DECKS, decks);
+  localStorage.setItem(STORAGE_DECKS, JSON.stringify(decks));
+  input.value = '';
+  renderDeckComments();
+}
+
+function renderDeckComments() {
+  const container = document.getElementById('deckCommentsContainer');
+  const comments = currentStudyDeck.comments || [];
+  if (comments.length === 0) {
+    container.innerHTML = `<p style="font-size: 11px; color: var(--text-muted);">ยังไม่มีความคิดเห็น</p>`;
+    return;
+  }
+  container.innerHTML = comments.map(c => `
+    <div style="background: var(--bg-main); padding: 6px 10px; border-radius: 6px; margin-bottom: 4px; font-size: 12px;">
+      <strong>${c.name}:</strong> ${c.text}
+    </div>
+  `).join('');
+}
+
+async function reportDeck() {
+  let reports = await getCloudData(STORAGE_REPORTS) || JSON.parse(localStorage.getItem(STORAGE_REPORTS) || '[]');
+  reports.push({
+    id: 'rep_' + Date.now(),
+    reporter: currentUser.email,
+    targetType: 'deck',
+    targetId: currentStudyDeck.id,
+    createdAt: new Date().toLocaleString()
+  });
+  await saveCloudData(STORAGE_REPORTS, reports);
+  localStorage.setItem(STORAGE_REPORTS, JSON.stringify(reports));
+  alert('ส่งรายงานสำรับนี้ให้แอดมินเรียบร้อย!');
+}
+
+// -------------------------------------------------------------
+// ศูนย์รวมแบบทดสอบ (Quiz Hub) + รองรับแก้ไขชุดข้อสอบ
+// -------------------------------------------------------------
+async function renderQuizHub() {
+  const grid = document.getElementById('quizHubGrid');
+  let customQuizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  
+  if (customQuizzes.length === 0) {
+    grid.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 30px;">ยังไม่มีชุดข้อสอบในระบบ กดปุ่ม "สร้างชุดข้อสอบใหม่" ด้านบนเพื่อเริ่มสร้างได้เลย</p>`;
+    return;
+  }
+
+  grid.innerHTML = customQuizzes.map(q => {
+    const isMine = q.author === currentUser.email || currentUser.isAdmin;
+    return `
+      <div class="deck-card" style="border-left: 4px solid var(--accent-terracotta);">
+        <h3>📝 ${q.title}</h3>
+        <p style="font-size: 12px; color: var(--accent-sage); margin-bottom: 2px;">สร้างโดย: ${q.authorName || 'ผู้ดูแลระบบ'}</p>
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">ข้อสอบ: ${q.questions.length} ข้อ | ❤️ ${q.likes ? q.likes.length : 0}</p>
+        <div style="display: flex; gap: 6px;">
+          <button class="btn-primary" onclick="openQuizSetup('${q.id}')">ทำข้อสอบ</button>
+          ${isMine ? `
+            <button class="btn-secondary" onclick="openEditCustomQuizModal('${q.id}')"><i class="fa-solid fa-pen"></i></button>
+            <button class="btn-secondary" onclick="deleteCustomQuiz('${q.id}')"><i class="fa-solid fa-trash"></i></button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openCreateCustomQuizModal() {
+  tempCustomQuizQuestions = [];
+  tempQuizImage = null;
+  document.getElementById('quizModalTitleText').innerText = 'สร้างชุดข้อสอบใหม่';
+  document.getElementById('editingQuizId').value = '';
+  document.getElementById('customQuizTitleInput').value = '';
+  document.getElementById('customQuizQ').value = '';
+  document.getElementById('customQuizCorrectA').value = '';
+  document.getElementById('customQuizWrong1').value = '';
+  document.getElementById('customQuizWrong2').value = '';
+  document.getElementById('quizImgPreviewContainer').style.display = 'none';
+  renderTempCustomQuizList();
+  document.getElementById('createCustomQuizModal').style.display = 'flex';
+}
+
+async function openEditCustomQuizModal(quizId) {
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  const qObj = quizzes.find(q => q.id === quizId);
+  if (!qObj) return;
+
+  document.getElementById('quizModalTitleText').innerText = 'แก้ไขชุดข้อสอบ';
+  document.getElementById('editingQuizId').value = qObj.id;
+  document.getElementById('customQuizTitleInput').value = qObj.title;
+  tempCustomQuizQuestions = [...(qObj.questions || [])];
+  tempQuizImage = null;
+  document.getElementById('quizImgPreviewContainer').style.display = 'none';
+  renderTempCustomQuizList();
+  document.getElementById('createCustomQuizModal').style.display = 'flex';
+}
+
+function handleQuizImgUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    tempQuizImage = ev.target.result;
+    document.getElementById('quizImgPreview').src = tempQuizImage;
+    document.getElementById('quizImgPreviewContainer').style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+
+function addCustomQuizQuestion() {
+  const q = document.getElementById('customQuizQ').value.trim();
+  const correct = document.getElementById('customQuizCorrectA').value.trim();
+  const w1 = document.getElementById('customQuizWrong1').value.trim();
+  const w2 = document.getElementById('customQuizWrong2').value.trim();
+  if (!q || !correct || !w1) return alert('กรอกคำถามและตัวเลือกอย่างน้อย 1 ตัวลวงให้ครบถ้วน');
+
+  tempCustomQuizQuestions.push({ q, image: tempQuizImage, correct, choices: [correct, w1, w2].filter(Boolean) });
+  
+  document.getElementById('customQuizQ').value = '';
+  document.getElementById('customQuizCorrectA').value = '';
+  document.getElementById('customQuizWrong1').value = '';
+  document.getElementById('customQuizWrong2').value = '';
+  document.getElementById('customQuizImgFile').value = '';
+  document.getElementById('quizImgPreviewContainer').style.display = 'none';
+  tempQuizImage = null;
+  renderTempCustomQuizList();
+}
+
+function renderTempCustomQuizList() {
+  const list = document.getElementById('tempCustomQuizList');
+  if (tempCustomQuizQuestions.length === 0) {
+    list.innerHTML = `<p style="font-size: 11px; color: var(--text-muted); text-align: center;">ยังไม่มีข้อสอบ</p>`;
+    return;
+  }
+  list.innerHTML = tempCustomQuizQuestions.map((item, i) => `<div style="font-size:11px; margin-bottom:2px;">ข้อ ${i+1}: ${item.q} ${item.image ? '🖼️' : ''}</div>`).join('');
+}
+
+async function saveCustomQuiz() {
+  const title = document.getElementById('customQuizTitleInput').value.trim();
+  const editingId = document.getElementById('editingQuizId').value;
+  if (!title || tempCustomQuizQuestions.length === 0) return alert('กรุณากรอกชื่อชุดข้อสอบและเพิ่มข้อสอบอย่างน้อย 1 ข้อ');
+
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+
+  if (editingId) {
+    let qObj = quizzes.find(q => q.id === editingId);
+    if (qObj) {
+      qObj.title = title;
+      qObj.questions = tempCustomQuizQuestions;
+    }
+  } else {
+    quizzes.push({ 
+      id: 'quiz_' + Date.now(), 
+      title, 
+      questions: tempCustomQuizQuestions, 
+      author: currentUser.email,
+      authorName: currentUser.name,
+      likes: [],
+      comments: []
+    });
+  }
+
+  await saveCloudData(STORAGE_QUIZZES, quizzes);
+  localStorage.setItem(STORAGE_QUIZZES, JSON.stringify(quizzes));
+  document.getElementById('createCustomQuizModal').style.display = 'none';
+  renderQuizHub();
+}
+
+async function deleteCustomQuiz(quizId) {
+  if (!confirm('ยืนยันลบชุดข้อสอบนี้?')) return;
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  quizzes = quizzes.filter(q => q.id !== quizId);
+  await saveCloudData(STORAGE_QUIZZES, quizzes);
+  localStorage.setItem(STORAGE_QUIZZES, JSON.stringify(quizzes));
+  renderQuizHub();
+}
+
+function openQuizSetup(quizId) {
+  activeQuizId = quizId;
+  document.getElementById('quizSetupModal').style.display = 'flex';
+}
+
+async function confirmStartQuiz() {
+  document.getElementById('quizSetupModal').style.display = 'none';
+  const timeMins = parseInt(document.getElementById('quizTimeSelect').value);
+  
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  const qObj = quizzes.find(q => q.id === activeQuizId);
+  if (!qObj) return;
+
+  const questions = qObj.questions.map(item => ({
+    q: item.q,
+    image: item.image,
+    correct: item.correct,
+    choices: [...item.choices].sort(() => Math.random() - 0.5)
+  }));
+
+  quizState.questions = questions;
+  quizState.timeLeft = timeMins * 60;
+  
+  document.getElementById('quizTitle').innerText = qObj.title;
+  document.getElementById('quizAuthorDisplay').innerText = `สร้างโดย: ${qObj.authorName || 'ผู้ดูแลระบบ'}`;
+  
+  updateQuizLikeUI();
+  renderQuizComments();
+
+  document.getElementById('quizModal').style.display = 'flex';
+  startQuizTimer(timeMins > 0);
+  renderQuizQuestions();
+}
+
+function startQuizTimer(hasLimit) {
+  clearInterval(quizState.timer);
+  const display = document.getElementById('quizTimerDisplay');
+  if (!hasLimit) { display.innerText = '⏱️ ไม่จำกัดเวลา'; return; }
+
+  quizState.timer = setInterval(() => {
+    quizState.timeLeft--;
+    let m = Math.floor(quizState.timeLeft / 60);
+    let s = quizState.timeLeft % 60;
+    display.innerText = `⏱️ ${m}:${s < 10 ? '0' : ''}${s}`;
+    if (quizState.timeLeft <= 0) {
+      clearInterval(quizState.timer);
+      alert('หมดเวลา!');
+      submitQuizAnswers();
+    }
+  }, 1000);
+}
+
+function renderQuizQuestions() {
+  const container = document.getElementById('quizBody');
+  container.innerHTML = quizState.questions.map((item, idx) => `
+    <div style="margin-bottom: 14px; padding: 12px; background: white; border-radius: 8px; border: 1px solid var(--border-subtle);">
+      <p style="font-weight: bold; margin-bottom: 6px; font-size: 13px;">ข้อ ${idx+1}: ${item.q}</p>
+      ${item.image ? `<img src="${item.image}" style="max-height: 120px; border-radius: 6px; margin-bottom: 8px;">` : ''}
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        ${item.choices.map(choice => `
+          <label style="font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+            <input type="radio" name="q_${idx}" value="${choice.replace(/"/g, '&quot;')}"> ${choice}
+          </label>
+        `).join('')}
+      </div>
+    </div>
+  `).join('') + `<button class="btn-primary" onclick="submitQuizAnswers()">ส่งคำตอบ</button>`;
+}
+
+async function toggleLikeQuiz() {
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  const qObj = quizzes.find(q => q.id === activeQuizId);
+  if (!qObj) return;
+
+  qObj.likes = qObj.likes || [];
+  const idx = qObj.likes.indexOf(currentUser.email);
+  if (idx > -1) qObj.likes.splice(idx, 1);
+  else qObj.likes.push(currentUser.email);
+
+  await saveCloudData(STORAGE_QUIZZES, quizzes);
+  localStorage.setItem(STORAGE_QUIZZES, JSON.stringify(quizzes));
+  updateQuizLikeUI();
+}
+
+async function updateQuizLikeUI() {
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  const qObj = quizzes.find(q => q.id === activeQuizId);
+  if (!qObj) return;
+
+  const likes = qObj.likes || [];
+  const isLiked = likes.includes(currentUser.email);
+  const btn = document.getElementById('quizLikeBtn');
+  btn.style.color = isLiked ? 'var(--accent-terracotta)' : 'var(--text-muted)';
+  document.getElementById('quizLikeCount').innerText = likes.length;
+}
+
+async function addQuizComment() {
+  const input = document.getElementById('quizCommentInput');
+  const text = input.value.trim();
+  if (!text) return;
+
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  const qObj = quizzes.find(q => q.id === activeQuizId);
+  if (!qObj) return;
+
+  qObj.comments = qObj.comments || [];
+  qObj.comments.push({ name: currentUser.name, text, time: new Date().toLocaleDateString() });
+
+  await saveCloudData(STORAGE_QUIZZES, quizzes);
+  localStorage.setItem(STORAGE_QUIZZES, JSON.stringify(quizzes));
+  input.value = '';
+  renderQuizComments();
+}
+
+function renderQuizComments() {
+  getCloudData(STORAGE_QUIZZES).then(quizzes => {
+    let qObj = (quizzes || []).find(q => q.id === activeQuizId);
+    const container = document.getElementById('quizCommentsContainer');
+    const comments = qObj ? (qObj.comments || []) : [];
+    if (comments.length === 0) {
+      container.innerHTML = `<p style="font-size: 11px; color: var(--text-muted);">ยังไม่มีความคิดเห็น</p>`;
+      return;
+    }
+    container.innerHTML = comments.map(c => `
+      <div style="background: var(--bg-main); padding: 6px 10px; border-radius: 6px; margin-bottom: 4px; font-size: 12px;">
+        <strong>${c.name}:</strong> ${c.text}
+      </div>
+    `).join('');
+  });
+}
+
+async function reportQuiz() {
+  let reports = await getCloudData(STORAGE_REPORTS) || JSON.parse(localStorage.getItem(STORAGE_REPORTS) || '[]');
+  reports.push({
+    id: 'rep_' + Date.now(),
+    reporter: currentUser.email,
+    targetType: 'quiz',
+    targetId: activeQuizId,
+    createdAt: new Date().toLocaleString()
+  });
+  await saveCloudData(STORAGE_REPORTS, reports);
+  localStorage.setItem(STORAGE_REPORTS, JSON.stringify(reports));
+  alert('ส่งรายงานชุดข้อสอบนี้ให้แอดมินเรียบร้อย!');
+}
+
+function submitQuizAnswers() {
+  clearInterval(quizState.timer);
+  let score = 0;
+  let wrongList = [];
+
+  quizState.questions.forEach((item, idx) => {
+    const selected = document.querySelector(`input[name="q_${idx}"]:checked`);
+    const ans = selected ? selected.value : 'ไม่ได้ตอบ';
+    if (ans === item.correct) score++;
+    else wrongList.push({ q: item.q, correct: item.correct, ans });
+  });
+
+  const container = document.getElementById('quizBody');
+  container.innerHTML = `
+    <div style="text-align: center; padding: 16px;">
+      <h2>🎉 คะแนนของคุณ</h2>
+      <p style="font-size: 22px; font-weight: bold; color: var(--accent-sage); margin: 10px 0;">${score} / ${quizState.questions.length}</p>
+      ${wrongList.length > 0 ? `
+        <div style="text-align: left; background: #FFF5F5; padding: 10px; border-radius: 6px; font-size: 12px; max-height: 200px; overflow-y: auto;">
+          <h4 style="color: #C53030; margin-bottom: 6px;">ข้อที่ตอบผิด:</h4>
+          ${wrongList.map(w => `<p style="margin-bottom:4px;">Q: ${w.q}<br>ตอบ: ${w.ans} | เฉลย: ${w.correct}</p>`).join('')}
+        </div>
+      ` : '<p style="color: #2F855A; font-weight: bold;">ยอดเยี่ยม! ถูกหมดทุกข้อ</p>'}
+      <button class="btn-primary" style="margin-top: 14px;" onclick="document.getElementById('quizModal').style.display='none'; renderQuizHub();">ปิดหน้าต่าง</button>
+    </div>
+  `;
+}
+
+// โพสต์ คอมเมนต์ และแชท
 function handlePostImagesUpload(e) {
   const files = Array.from(e.target.files);
   if (files.length > 5) return alert('แนบรูปได้ไม่เกิน 5 รูป');
@@ -459,7 +1000,6 @@ async function filterCommunity() {
   const matchedUsers = users.filter(u => u.name.toLowerCase().includes(kw) || u.email.toLowerCase().includes(kw));
 
   if (matchedUsers.length > 0) {
-    const isAdmin = currentUser && currentUser.isAdmin; // ตรวจสอบสิทธิ์ Admin
     searchResultsContainer.style.display = 'block';
     searchResultsContainer.innerHTML = `
       <h4 style="font-size:14px; margin-bottom:8px; color:var(--accent-sage);">👤 พบผู้ใช้งาน (${matchedUsers.length}):</h4>
@@ -467,7 +1007,7 @@ async function filterCommunity() {
         ${matchedUsers.map(u => `
           <div style="background:white; padding:10px 14px; border-radius:8px; border:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center;">
             <div>
-              <strong>${u.name}</strong>${isAdmin ? `<span style="font-size:12px; color:var(--text-muted);">(${u.email})</span>` : ''}
+              <strong>${u.name}</strong> <span style="font-size:12px; color:var(--text-muted);">(${u.email})</span>
             </div>
             <button class="btn-primary" style="width:auto; padding:4px 12px; font-size:12px;" onclick="openUserProfileModal('${u.email}')">ดูโปรไฟล์</button>
           </div>
@@ -538,19 +1078,13 @@ async function renderFeed(searchKw = '') {
 function renderCommentItem(postId, c) {
   const myEmail = currentUser ? currentUser.email.trim().toLowerCase() : '';
   const commentEmail = c.email ? c.email.trim().toLowerCase() : '';
-  
-  const isMyComment = currentUser && (
-    (commentEmail && myEmail === commentEmail) || 
-    (!c.email && c.name === currentUser.name)
-  );
-  
+  const isMyComment = currentUser && ((commentEmail && myEmail === commentEmail) || (!c.email && c.name === currentUser.name));
   const isLiked = c.likes && c.likes.includes(currentUser.email);
   
   return `
     <div class="comment-item" style="position: relative; padding-top: 6px;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <strong style="cursor:pointer; color:var(--accent-sage);" onclick="openUserProfileModal('${c.email || ''}')">${c.name}</strong>
-        
         <div style="display: flex; gap: 8px; align-items: center;">
           <button onclick="reportItem('comment', '${c.id}')" class="btn-icon" style="font-size: 11px; color: var(--text-muted);" title="รายงานคอมเมนต์"><i class="fa-solid fa-flag"></i></button>
           ${isMyComment ? `
@@ -559,9 +1093,7 @@ function renderCommentItem(postId, c) {
           ` : ''}
         </div>
       </div>
-      
       <p style="margin-top:4px; font-size:12px; white-space: pre-line;">${c.text}</p>
-      
       <div class="comment-actions">
         <button onclick="toggleLikeComment('${postId}', '${c.id}')" style="color:${isLiked ? 'var(--accent-terracotta)' : 'var(--text-muted)'};">
           <i class="fa-solid fa-heart"></i> ชอบ (${c.likes ? c.likes.length : 0})
@@ -576,10 +1108,7 @@ function renderCommentItem(postId, c) {
 
       ${c.replies ? c.replies.map(r => {
         const replyEmail = r.email ? r.email.trim().toLowerCase() : '';
-        const isMyReply = currentUser && (
-          (replyEmail && myEmail === replyEmail) || 
-          (!r.email && r.name === currentUser.name)
-        );
+        const isMyReply = currentUser && ((replyEmail && myEmail === replyEmail) || (!r.email && r.name === currentUser.name));
         const isReplyLiked = r.likes && r.likes.includes(currentUser.email);
         return `
           <div class="reply-item">
@@ -848,8 +1377,10 @@ async function openUserProfileModal(userEmail) {
   }
 
   document.getElementById('viewProfileName').innerText = targetUser.name;
-  const isAdmin = currentUser && currentUser.isAdmin;
-  document.getElementById('viewProfileEmail').innerText = isAdmin ? targetUser.email : '';
+  document.getElementById('viewProfileEmail').innerText = targetUser.email;
+  const isOnline = targetUser.lastActive && (Date.now() - targetUser.lastActive < 180000);
+  document.getElementById('viewProfileOnlineStatus').className = `online-dot ${isOnline ? 'online' : 'offline'}`;
+  document.getElementById('viewProfileStatusText').innerText = isOnline ? 'กำลังออนไลน์' : 'ออฟไลน์';
   document.getElementById('viewProfileBio').innerText = targetUser.bio || 'ไม่มีข้อความแนะนำตัว';
 
   const followers = targetUser.followers || [];
@@ -860,19 +1391,20 @@ async function openUserProfileModal(userEmail) {
   const btnFollow = document.getElementById('btnFollowUser');
   btnFollow.innerText = followers.includes(currentUser.email) ? 'ยกเลิกการติดตาม' : 'ติดตาม';
 
-  const decksPath = STORAGE_DECKS + targetUser.email;
-  const decks = await getCloudData(decksPath) || JSON.parse(localStorage.getItem(decksPath) || '[]');
+  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+  const userDecks = decks.filter(d => d.authorEmail && d.authorEmail.toLowerCase() === targetUser.email.toLowerCase() && d.privacy !== 'private');
+  
   const decksListEl = document.getElementById('viewUserDecksList');
-  if (decks.length === 0) {
-    decksListEl.innerHTML = `<p style="font-size:12px; color:var(--text-muted);">ผู้ใช้นี้ยังไม่ได้เปิดใช้งานแฟลชการ์ด</p>`;
+  if (userDecks.length === 0) {
+    decksListEl.innerHTML = `<p style="font-size:12px; color:var(--text-muted);">ผู้ใช้นี้ยังไม่มีสำรับสาธารณะ</p>`;
   } else {
-    decksListEl.innerHTML = decks.map(d => `
+    decksListEl.innerHTML = userDecks.map(d => `
       <div style="background:var(--bg-main); padding:10px; border-radius:8px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
         <div>
           <strong style="font-size:14px;">${d.name}</strong>
           <p style="font-size:11px; color:var(--text-muted);">การ์ด ${d.cards ? d.cards.length : 0} ใบ</p>
         </div>
-        <button class="btn-primary" style="width:auto; padding:4px 12px; font-size:12px;" onclick="startStudy('${d.id}', '${targetUser.email}')">เข้าใช้ฟรี</button>
+        <button class="btn-primary" style="width:auto; padding:4px 12px; font-size:12px;" onclick="startStudy('${d.id}')">เข้าใช้</button>
       </div>
     `).join('');
   }
@@ -937,23 +1469,28 @@ async function renderChatUsersList() {
   let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
   const list = document.getElementById('chatUsersList');
   const otherUsers = users.filter(u => u.email !== currentUser.email);
+  const now = Date.now();
 
   if (otherUsers.length === 0) {
     list.innerHTML = `<p style="color:var(--text-muted);">ยังไม่มีผู้ใช้อื่นในระบบ</p>`;
     return;
   }
 
-  const isAdmin = currentUser && currentUser.isAdmin; // ตรวจสอบสิทธิ์ Admin
-
-  list.innerHTML = otherUsers.map(u => `
-    <div style="background:white; padding:12px; border-radius:8px; margin-bottom:8px; border:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center;">
-      <div>
-        <strong>${u.name}</strong>
-        ${isAdmin ? `<p style="font-size:12px; color:var(--text-muted);">${u.email}</p>` : ''}
+  list.innerHTML = otherUsers.map(u => {
+    const isOnline = u.lastActive && (now - u.lastActive < 180000);
+    return `
+      <div style="background:white; padding:12px; border-radius:8px; margin-bottom:8px; border:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span class="online-dot ${isOnline ? 'online' : 'offline'}"></span>
+          <div>
+            <strong>${u.name}</strong>
+            <p style="font-size: 11px; color: var(--text-muted);">${isOnline ? '🟢 กำลังออนไลน์' : '⚪ ออฟไลน์'}</p>
+          </div>
+        </div>
+        <button class="btn-primary" style="width:auto; padding:6px 14px; font-size:12px;" onclick="openUserProfileModal('${u.email}')">ดูโปรไฟล์ / แชท</button>
       </div>
-      <button class="btn-primary" style="width:auto; padding:6px 14px; font-size:12px;" onclick="openUserProfileModal('${u.email}')">ดูโปรไฟล์ / แชท</button>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 async function renderChatMessages() {
@@ -1059,6 +1596,8 @@ async function renderAdminDashboard() {
   let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
   let reports = await getCloudData(STORAGE_REPORTS) || JSON.parse(localStorage.getItem(STORAGE_REPORTS) || '[]');
   let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
   const container = document.getElementById('adminContainer');
 
   const pendingUsers = users.filter(u => u.customImg && u.avatarStatus === 'pending');
@@ -1088,19 +1627,16 @@ async function renderAdminDashboard() {
           if (r.targetType === 'post') {
             const p = posts.find(item => item.id === r.targetId);
             if (p) detailText = `<strong>โพสต์ของ ${p.authorName}:</strong> "${p.content}"`;
+          } else if (r.targetType === 'deck') {
+            const d = decks.find(item => item.id === r.targetId);
+            if (d) detailText = `<strong>สำรับแฟลชการ์ดของ ${d.authorName}:</strong> "${d.name}"`;
+          } else if (r.targetType === 'quiz') {
+            const q = quizzes.find(item => item.id === r.targetId);
+            if (q) detailText = `<strong>ชุดข้อสอบของ ${q.authorName}:</strong> "${q.title}"`;
           } else if (r.targetType === 'comment') {
             for (let p of posts) {
               const c = p.comments ? p.comments.find(item => item.id === r.targetId) : null;
               if (c) { detailText = `<strong>คอมเมนต์ของ ${c.name}:</strong> "${c.text}"`; break; }
-            }
-          } else if (r.targetType === 'reply') {
-            for (let p of posts) {
-              if (p.comments) {
-                for (let c of p.comments) {
-                  const reply = c.replies ? c.replies.find(item => item.id === r.targetId) : null;
-                  if (reply) { detailText = `<strong>ตอบกลับของ ${reply.name}:</strong> "${reply.text}"`; break; }
-                }
-              }
             }
           }
 
@@ -1133,34 +1669,30 @@ async function deleteReportedItem(reportId, targetType, targetId) {
   if (!confirm('ยืนยันลบเนื้อหานี้ทิ้งตามที่มีผู้รายงานใช่หรือไม่?')) return;
 
   let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
   let reports = await getCloudData(STORAGE_REPORTS) || JSON.parse(localStorage.getItem(STORAGE_REPORTS) || '[]');
 
   if (targetType === 'post') {
     posts = posts.filter(p => p.id !== targetId);
-  } else if (targetType === 'comment') {
-    posts.forEach(p => {
-      if (p.comments) p.comments = p.comments.filter(c => c.id !== targetId);
-    });
-  } else if (targetType === 'reply') {
-    posts.forEach(p => {
-      if (p.comments) {
-        p.comments.forEach(c => {
-          if (c.replies) c.replies = c.replies.filter(r => r.id !== targetId);
-        });
-      }
-    });
+    await saveCloudData(STORAGE_POSTS, posts);
+    localStorage.setItem(STORAGE_POSTS, JSON.stringify(posts));
+  } else if (targetType === 'deck') {
+    decks = decks.filter(d => d.id !== targetId);
+    await saveCloudData(STORAGE_DECKS, decks);
+    localStorage.setItem(STORAGE_DECKS, JSON.stringify(decks));
+  } else if (targetType === 'quiz') {
+    quizzes = quizzes.filter(q => q.id !== targetId);
+    await saveCloudData(STORAGE_QUIZZES, quizzes);
+    localStorage.setItem(STORAGE_QUIZZES, JSON.stringify(quizzes));
   }
 
   reports = reports.filter(r => r.id !== reportId);
-
-  await saveCloudData(STORAGE_POSTS, posts);
-  localStorage.setItem(STORAGE_POSTS, JSON.stringify(posts));
   await saveCloudData(STORAGE_REPORTS, reports);
   localStorage.setItem(STORAGE_REPORTS, JSON.stringify(reports));
 
   alert('ลบเนื้อหาและจัดการรายงานเรียบร้อยแล้ว');
   renderAdminDashboard();
-  renderFeed();
 }
 
 async function dismissReport(reportId) {
