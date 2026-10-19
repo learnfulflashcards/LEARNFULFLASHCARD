@@ -43,7 +43,7 @@
       <form id="authForm" onsubmit="handleAuth(event)">
         <div class="form-group" id="groupName" style="display: none;">
           <label>ชื่อของคุณ</label>
-          <input type="text" id="inputName" placeholder="เช่น แอลเอฟ" class="form-input">
+          <input type="text" id="inputName" placeholder="เช่น เอสโซ่" class="form-input">
         </div>
 
         <div class="form-group" id="groupAvatar" style="display: none;">
@@ -196,7 +196,7 @@
 
       <!-- 5. แท็บห้องแชท -->
       <section id="tab-chatSelect" class="tab-content" style="display: none;">
-        <h2>ห้องแชทส่วนตัว</h2>
+        <h2>ห้องสนทนาสเปซส่วนตัว</h2>
         <div id="chatUsersList" style="margin-top: 16px;"></div>
       </section>
 
@@ -227,8 +227,8 @@
       <div class="form-group">
         <label>การแสดงผล</label>
         <select id="newDeckPrivacyInput" class="form-input">
-          <option value="public">🌏 สาธารณะ</option>
-          <option value="private">👤 ส่วนตัว</option>
+          <option value="public">สาธารณะ (เปิดให้ผู้อื่นเข้าใช้และกดใจ)</option>
+          <option value="private">ส่วนตัว (เห็นและใช้คนเดียว)</option>
         </select>
       </div>
       <hr style="border: 0; border-top: 1px solid var(--border-subtle); margin: 16px 0;">
@@ -242,7 +242,7 @@
         <input type="text" id="newCardA" class="form-input" placeholder="เช่น สวัสดี">
       </div>
       <div class="form-group">
-        <label>แนบรูปภาพประกอบ (1 รูป ไม่บังคับ)</label>
+        <label>แนบรูปภาพประกอบ (1 รูป)</label>
         <input type="file" id="newCardImgFile" accept="image/*" class="form-input" onchange="handleCardImageUpload(event)">
         <div id="cardImgPreviewContainer" style="margin-top: 8px; display: none;">
           <img id="cardImgPreview" src="" style="max-height: 80px; border-radius: 6px;">
@@ -258,7 +258,7 @@
     </div>
   </div>
 
-  <!-- Modal สร้างชุดข้อสอบแยกอิสระ (พร้อมรูปภาพประกอบ) -->
+  <!-- Modal สร้างชุดข้อสอบแยกอิสระ -->
   <div id="createCustomQuizModal" class="modal" style="display: none;">
     <div class="modal-content" style="max-width: 550px;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
@@ -366,10 +366,8 @@
         <label>เวลาทำข้อสอบ</label>
         <select id="quizTimeSelect" class="form-input">
           <option value="1">1 นาที</option>
-          <option value="5" selected>5 นาที</option>
-          <option value="10">10 นาที</option>
-          <option value="30">30 นาที</option>
-          <option value="60">1 ชั่วโมง</option>
+          <option value="3" selected>3 นาที</option>
+          <option value="5">5 นาที</option>
           <option value="0">ไม่จำกัดเวลา</option>
         </select>
       </div>
@@ -506,12 +504,15 @@
         <p>1. เคารพซึ่งกันและกัน ห้ามใช้คำหยาบ บูลลี่ หรือสร้างความเกลียดชัง</p>
         <p>2. รูปโปรไฟล์ต้องเหมาะสม และรูปใหม่จะต้องรอแอดมินตรวจสอบอนุมัติภายใน 1-2 วัน</p>
         <p>3. โพสต์บทความพร้อมรูปภาพประกอบได้ไม่เกิน 5 รูปต่อโพสต์</p>
-        <p>4. สามารถรายงานเนื้อหาหรือโปรไฟล์ที่ไม่เหมาะสมได้ โดยระบบจะแจ้งแอดมินเพื่อตรวจสอบภายใน 1-2 วัน</p>
+        <p>4. สามารถกดรายงานเนื้อหาหรือโปรไฟล์ที่ไม่เหมาะสมได้ โดยระบบจะแจ้งแอดมินเพื่อตรวจสอบภายใน 1-2 วัน</p>
       </div>
       <button class="btn-primary" style="width: 100%;" onclick="closeTermsModal(event)">เข้าใจและปิดหน้าต่าง</button>
     </div>
   </div>
 
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

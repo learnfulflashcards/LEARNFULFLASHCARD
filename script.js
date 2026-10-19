@@ -1,3 +1,17 @@
+// --- ⚙️ ตั้งค่า Firebase ของนาย ---
+const firebaseConfig = {
+  apiKey: "AIzaSyC3S1cCoYqUZGOz4gr1ybzn1JKSJPJPi14",
+  authDomain: "learnful-flashcard-new.firebaseapp.com",
+  projectId: "learnful-flashcard-new",
+  storageBucket: "learnful-flashcard-new.firebasestorage.app",
+  messagingSenderId: "244528248749",
+  appId: "1:244528248749:web:286c006d430d51dee75324"
+};
+
+// เริ่มต้นเชื่อมต่อ Firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
 const STORAGE_USERS = 'Learnful_flash_users';
 const STORAGE_CURRENT_USER = 'Learnful_flash_session';
 const STORAGE_DECKS = 'Learnful_flash_all_decks';
@@ -35,17 +49,33 @@ const AVATAR_OPTIONS = [
   { icon: 'fa-heart', bg: '#C27BA0' }
 ];
 
+// ฟังก์ชันดึงข้อมูลจาก Cloud Firestore ของจริง
 async function getCloudData(path) {
-  const data = localStorage.getItem('firebase_' + path);
-  return data ? JSON.parse(data) : null;
+  try {
+    const docRef = db.collection('learnful_database').doc(path);
+    const doc = await docRef.get();
+    if (doc.exists) {
+      return doc.data().value;
+    }
+    return null;
+  } catch (error) {
+    console.error("Error reading cloud data:", error);
+    return null;
+  }
 }
 
+// ฟังก์ชันบันทึกข้อมูลลง Cloud Firestore ของจริง
 async function saveCloudData(path, data) {
-  localStorage.setItem('firebase_' + path, JSON.stringify(data));
+  try {
+    const docRef = db.collection('learnful_database').doc(path);
+    await docRef.set({ value: data });
+  } catch (error) {
+    console.error("Error writing cloud data:", error);
+  }
 }
 
 async function ensureAdminAccount() {
-  let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
+  let users = await getCloudData(STORAGE_USERS) || [];
   if (!users.some(u => u.isAdmin)) {
     users.push({
       email: 'learnful.flashcard.official@gmail.com',
@@ -60,7 +90,6 @@ async function ensureAdminAccount() {
       lastActive: Date.now()
     });
     await saveCloudData(STORAGE_USERS, users);
-    localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
   }
 }
 ensureAdminAccount();
@@ -73,12 +102,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function updateOnlineHeartbeat() {
   if (!currentUser) return;
-  let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
+  let users = await getCloudData(STORAGE_USERS) || [];
   let idx = users.findIndex(u => u.email.toLowerCase() === currentUser.email.toLowerCase());
   if (idx !== -1) {
     users[idx].lastActive = Date.now();
     await saveCloudData(STORAGE_USERS, users);
-    localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
   }
 }
 
@@ -136,7 +164,7 @@ async function handleAuth(e) {
   const email = document.getElementById('inputEmail').value.trim();
   const password = document.getElementById('inputPassword').value;
   
-  let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
+  let users = await getCloudData(STORAGE_USERS) || [];
 
   if (isRegister) {
     const name = document.getElementById('inputName').value.trim() || 'ผู้เรียน';
@@ -155,7 +183,7 @@ async function handleAuth(e) {
       avatar: selectedAvatar,
       customImg: null,
       avatarStatus: 'approved',
-      bio: 'สวัสดี ผู้ไขว่คว้าความรู้ทุกคน',
+      bio: 'สวัสดี ฉันใช้ Learnful',
       followers: [],
       following: [],
       lastActive: Date.now()
@@ -163,7 +191,6 @@ async function handleAuth(e) {
     
     users.push(newUser);
     await saveCloudData(STORAGE_USERS, users);
-    localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
     loginUser(newUser);
   } else {
     const user = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
@@ -237,7 +264,7 @@ function updateProfileDisplay() {
 }
 
 async function renderDashboardStats() {
-  let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
+  let users = await getCloudData(STORAGE_USERS) || [];
   document.getElementById('totalUsersCount').innerText = `${users.length} คน`;
 
   const now = Date.now();
@@ -245,7 +272,7 @@ async function renderDashboardStats() {
   document.getElementById('onlineUsersCount').innerText = `${onlineCount} คน`;
 
   const progressPath = STORAGE_PROGRESS + currentUser.email;
-  const progress = await getCloudData(progressPath) || JSON.parse(localStorage.getItem(progressPath) || '{}');
+  const progress = await getCloudData(progressPath) || {};
   
   let studied = Object.keys(progress).length;
   let remembered = Object.values(progress).filter(v => v === 'remembered').length;
@@ -257,7 +284,7 @@ async function renderDashboardStats() {
 }
 
 async function renderAdminNoticeBoard() {
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let posts = await getCloudData(STORAGE_POSTS) || [];
   let adminPosts = posts.filter(p => p.authorEmail === 'learnful.flashcard.official@gmail.com' || p.authorName === 'Admin Learnful');
 
   const container = document.getElementById('adminNoticeBoardContainer');
@@ -280,7 +307,7 @@ async function renderAdminNoticeBoard() {
 
 async function openWordListModal(type) {
   const progressPath = STORAGE_PROGRESS + currentUser.email;
-  const progress = await getCloudData(progressPath) || JSON.parse(localStorage.getItem(progressPath) || '{}');
+  const progress = await getCloudData(progressPath) || {};
   
   const titleMap = { studied: 'คำศัพท์ที่เรียนทั้งหมด', remembered: 'คำศัพท์ที่จำได้แม่นยำ', forgot: 'คำศัพท์ที่ยังจำไม่ได้' };
   document.getElementById('wordListTitle').innerText = titleMap[type];
@@ -311,7 +338,7 @@ async function openWordListModal(type) {
 // แฟลชการ์ด (เด็คคำศัพท์)
 // -------------------------------------------------------------
 async function loadDecks(searchKeyword = '') {
-  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+  let decks = await getCloudData(STORAGE_DECKS) || [];
   const grid = document.getElementById('decksGrid');
 
   const visibleDecks = decks.filter(d => {
@@ -369,7 +396,7 @@ function openCreateDeckModal() {
 }
 
 async function openEditDeckModal(deckId) {
-  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+  let decks = await getCloudData(STORAGE_DECKS) || [];
   const deck = decks.find(d => d.id === deckId);
   if (!deck) return;
 
@@ -441,7 +468,7 @@ async function saveNewDeck() {
   if (!name) return alert('กรุณาตั้งชื่อสำรับคำศัพท์');
   if (tempDeckCards.length === 0) return alert('กรุณาเพิ่มการ์ดอย่างน้อย 1 ใบ');
 
-  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+  let decks = await getCloudData(STORAGE_DECKS) || [];
 
   if (editingId) {
     let deck = decks.find(d => d.id === editingId);
@@ -465,29 +492,25 @@ async function saveNewDeck() {
   }
   
   await saveCloudData(STORAGE_DECKS, decks);
-  localStorage.setItem(STORAGE_DECKS, JSON.stringify(decks));
   closeCreateDeckModal();
   loadDecks();
 }
 
 async function deleteDeck(id) {
   if (!confirm('ยืนยันลบสำรับนี้?')) return;
-  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+  let decks = await getCloudData(STORAGE_DECKS) || [];
   decks = decks.filter(d => d.id !== id);
-  
   await saveCloudData(STORAGE_DECKS, decks);
-  localStorage.setItem(STORAGE_DECKS, JSON.stringify(decks));
   loadDecks();
 }
 
 async function startStudy(deckId) {
-  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+  let decks = await getCloudData(STORAGE_DECKS) || [];
   const deck = decks.find(d => d.id === deckId);
   if (!deck || !deck.cards || deck.cards.length === 0) return alert('สำรับนี้ไม่มีการ์ดคำศัพท์');
 
   deck.viewCount = (deck.viewCount || 0) + 1;
   await saveCloudData(STORAGE_DECKS, decks);
-  localStorage.setItem(STORAGE_DECKS, JSON.stringify(decks));
 
   currentStudyDeck = deck;
   studyQueue = [...deck.cards];
@@ -528,13 +551,12 @@ function flipCard() {
 async function rateCard(rating) {
   const card = studyQueue[studyIndex];
   const progressPath = STORAGE_PROGRESS + currentUser.email;
-  let progress = await getCloudData(progressPath) || JSON.parse(localStorage.getItem(progressPath) || '{}');
+  let progress = await getCloudData(progressPath) || {};
   
   const key = `${card.q}|||${card.a}`;
   progress[key] = (rating === 4) ? 'remembered' : 'forgot';
 
   await saveCloudData(progressPath, progress);
-  localStorage.setItem(progressPath, JSON.stringify(progress));
 
   studyIndex++;
   isShowingAnswer = false;
@@ -563,7 +585,7 @@ function speakCurrentCardText() {
 }
 
 async function toggleLikeDeck() {
-  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+  let decks = await getCloudData(STORAGE_DECKS) || [];
   const deck = decks.find(d => d.id === currentStudyDeck.id);
   if (!deck) return;
 
@@ -574,7 +596,6 @@ async function toggleLikeDeck() {
 
   currentStudyDeck = deck;
   await saveCloudData(STORAGE_DECKS, decks);
-  localStorage.setItem(STORAGE_DECKS, JSON.stringify(decks));
   updateDeckLikeUI();
 }
 
@@ -591,7 +612,7 @@ async function addDeckComment() {
   const text = input.value.trim();
   if (!text) return;
 
-  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+  let decks = await getCloudData(STORAGE_DECKS) || [];
   const deck = decks.find(d => d.id === currentStudyDeck.id);
   if (!deck) return;
 
@@ -600,7 +621,6 @@ async function addDeckComment() {
 
   currentStudyDeck = deck;
   await saveCloudData(STORAGE_DECKS, decks);
-  localStorage.setItem(STORAGE_DECKS, JSON.stringify(decks));
   input.value = '';
   renderDeckComments();
 }
@@ -620,7 +640,7 @@ function renderDeckComments() {
 }
 
 async function reportDeck() {
-  let reports = await getCloudData(STORAGE_REPORTS) || JSON.parse(localStorage.getItem(STORAGE_REPORTS) || '[]');
+  let reports = await getCloudData(STORAGE_REPORTS) || [];
   reports.push({
     id: 'rep_' + Date.now(),
     reporter: currentUser.email,
@@ -629,7 +649,6 @@ async function reportDeck() {
     createdAt: new Date().toLocaleString()
   });
   await saveCloudData(STORAGE_REPORTS, reports);
-  localStorage.setItem(STORAGE_REPORTS, JSON.stringify(reports));
   alert('ส่งรายงานสำรับนี้ให้แอดมินเรียบร้อย!');
 }
 
@@ -638,10 +657,10 @@ async function reportDeck() {
 // -------------------------------------------------------------
 async function renderQuizHub() {
   const grid = document.getElementById('quizHubGrid');
-  let customQuizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  let customQuizzes = await getCloudData(STORAGE_QUIZZES) || [];
   
   if (customQuizzes.length === 0) {
-    grid.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 30px;">ยังไม่มีชุดข้อสอบในระบบ กดปุ่ม "สร้างชุดข้อสอบใหม่" ด้านบนเพื่อเริ่มสร้างได้เลย</p>`;
+    grid.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 30px;">ยังไม่มีชุดข้อสอบในระบบ กดปุ่ม "สร้างชุดข้อสอบใหม่" ด้านบนเพื่อเริ่มสร้างได้เลยครับ</p>`;
     return;
   }
 
@@ -680,7 +699,7 @@ function openCreateCustomQuizModal() {
 }
 
 async function openEditCustomQuizModal(quizId) {
-  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || [];
   const qObj = quizzes.find(q => q.id === quizId);
   if (!qObj) return;
 
@@ -739,7 +758,7 @@ async function saveCustomQuiz() {
   const editingId = document.getElementById('editingQuizId').value;
   if (!title || tempCustomQuizQuestions.length === 0) return alert('กรุณากรอกชื่อชุดข้อสอบและเพิ่มข้อสอบอย่างน้อย 1 ข้อ');
 
-  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || [];
 
   if (editingId) {
     let qObj = quizzes.find(q => q.id === editingId);
@@ -760,17 +779,15 @@ async function saveCustomQuiz() {
   }
 
   await saveCloudData(STORAGE_QUIZZES, quizzes);
-  localStorage.setItem(STORAGE_QUIZZES, JSON.stringify(quizzes));
   document.getElementById('createCustomQuizModal').style.display = 'none';
   renderQuizHub();
 }
 
 async function deleteCustomQuiz(quizId) {
   if (!confirm('ยืนยันลบชุดข้อสอบนี้?')) return;
-  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || [];
   quizzes = quizzes.filter(q => q.id !== quizId);
   await saveCloudData(STORAGE_QUIZZES, quizzes);
-  localStorage.setItem(STORAGE_QUIZZES, JSON.stringify(quizzes));
   renderQuizHub();
 }
 
@@ -783,7 +800,7 @@ async function confirmStartQuiz() {
   document.getElementById('quizSetupModal').style.display = 'none';
   const timeMins = parseInt(document.getElementById('quizTimeSelect').value);
   
-  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || [];
   const qObj = quizzes.find(q => q.id === activeQuizId);
   if (!qObj) return;
 
@@ -844,7 +861,7 @@ function renderQuizQuestions() {
 }
 
 async function toggleLikeQuiz() {
-  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || [];
   const qObj = quizzes.find(q => q.id === activeQuizId);
   if (!qObj) return;
 
@@ -854,12 +871,11 @@ async function toggleLikeQuiz() {
   else qObj.likes.push(currentUser.email);
 
   await saveCloudData(STORAGE_QUIZZES, quizzes);
-  localStorage.setItem(STORAGE_QUIZZES, JSON.stringify(quizzes));
   updateQuizLikeUI();
 }
 
 async function updateQuizLikeUI() {
-  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || [];
   const qObj = quizzes.find(q => q.id === activeQuizId);
   if (!qObj) return;
 
@@ -875,7 +891,7 @@ async function addQuizComment() {
   const text = input.value.trim();
   if (!text) return;
 
-  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || [];
   const qObj = quizzes.find(q => q.id === activeQuizId);
   if (!qObj) return;
 
@@ -883,7 +899,6 @@ async function addQuizComment() {
   qObj.comments.push({ name: currentUser.name, text, time: new Date().toLocaleDateString() });
 
   await saveCloudData(STORAGE_QUIZZES, quizzes);
-  localStorage.setItem(STORAGE_QUIZZES, JSON.stringify(quizzes));
   input.value = '';
   renderQuizComments();
 }
@@ -906,7 +921,7 @@ function renderQuizComments() {
 }
 
 async function reportQuiz() {
-  let reports = await getCloudData(STORAGE_REPORTS) || JSON.parse(localStorage.getItem(STORAGE_REPORTS) || '[]');
+  let reports = await getCloudData(STORAGE_REPORTS) || [];
   reports.push({
     id: 'rep_' + Date.now(),
     reporter: currentUser.email,
@@ -915,7 +930,6 @@ async function reportQuiz() {
     createdAt: new Date().toLocaleString()
   });
   await saveCloudData(STORAGE_REPORTS, reports);
-  localStorage.setItem(STORAGE_REPORTS, JSON.stringify(reports));
   alert('ส่งรายงานชุดข้อสอบนี้ให้แอดมินเรียบร้อย!');
 }
 
@@ -966,7 +980,7 @@ async function createPost() {
   const content = document.getElementById('postContentInput').value.trim();
   if (!content) return alert('กรุณากรอกข้อความโพสต์');
 
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let posts = await getCloudData(STORAGE_POSTS) || [];
   posts.unshift({
     id: 'post_' + Date.now(),
     authorEmail: currentUser.email,
@@ -979,7 +993,6 @@ async function createPost() {
   });
 
   await saveCloudData(STORAGE_POSTS, posts);
-  localStorage.setItem(STORAGE_POSTS, JSON.stringify(posts));
   document.getElementById('postContentInput').value = '';
   selectedPostImages = [];
   document.getElementById('postImagesPreview').innerHTML = '';
@@ -996,7 +1009,7 @@ async function filterCommunity() {
     return;
   }
 
-  let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
+  let users = await getCloudData(STORAGE_USERS) || [];
   const matchedUsers = users.filter(u => u.name.toLowerCase().includes(kw) || u.email.toLowerCase().includes(kw));
 
   if (matchedUsers.length > 0) {
@@ -1022,7 +1035,7 @@ async function filterCommunity() {
 }
 
 async function renderFeed(searchKw = '') {
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let posts = await getCloudData(STORAGE_POSTS) || [];
   const container = document.getElementById('feedContainer');
 
   const filteredPosts = posts.filter(p => 
@@ -1151,7 +1164,7 @@ async function saveEditedContent() {
   if (!newText) return alert('กรุณากรอกข้อความ');
 
   const { type, postId, commentId, replyId } = currentEditData;
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let posts = await getCloudData(STORAGE_POSTS) || [];
   const post = posts.find(p => p.id === postId);
   if (!post) return;
 
@@ -1169,30 +1182,28 @@ async function saveEditedContent() {
   }
 
   await saveCloudData(STORAGE_POSTS, posts);
-  localStorage.setItem(STORAGE_POSTS, JSON.stringify(posts));
   closeEditModal();
   renderFeed();
 }
 
 function editPost(id) {
-  let posts = JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
-  const post = posts.find(p => p.id === id);
-  if (!post) return;
-  openEditModal('post', id, null, null, post.content);
+  getCloudData(STORAGE_POSTS).then(posts => {
+    const post = (posts || []).find(p => p.id === id);
+    if (!post) return;
+    openEditModal('post', id, null, null, post.content);
+  });
 }
 
 async function deletePost(id) {
   if (!confirm('ต้องการลบโพสต์นี้ใช่ไหม?')) return;
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let posts = await getCloudData(STORAGE_POSTS) || [];
   let updatedPosts = posts.filter(p => String(p.id) !== String(id));
-  
   await saveCloudData(STORAGE_POSTS, updatedPosts);
-  localStorage.setItem(STORAGE_POSTS, JSON.stringify(updatedPosts));
   renderFeed();
 }
 
 async function toggleLikePost(id) {
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let posts = await getCloudData(STORAGE_POSTS) || [];
   const post = posts.find(p => p.id === id);
   if (!post) return;
   post.likes = post.likes || [];
@@ -1201,7 +1212,6 @@ async function toggleLikePost(id) {
   else post.likes.push(currentUser.email);
   
   await saveCloudData(STORAGE_POSTS, posts);
-  localStorage.setItem(STORAGE_POSTS, JSON.stringify(posts));
   renderFeed();
 }
 
@@ -1210,7 +1220,7 @@ async function addComment(postId) {
   const text = input.value.trim();
   if (!text) return;
 
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let posts = await getCloudData(STORAGE_POSTS) || [];
   const post = posts.find(p => p.id === postId);
   if (!post) return;
 
@@ -1225,33 +1235,31 @@ async function addComment(postId) {
   });
 
   await saveCloudData(STORAGE_POSTS, posts);
-  localStorage.setItem(STORAGE_POSTS, JSON.stringify(posts));
   renderFeed();
 }
 
 function editComment(postId, commentId) {
-  let posts = JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
-  const post = posts.find(p => p.id === postId);
-  if (!post) return;
-  const comment = post.comments.find(c => c.id === commentId);
-  if (!comment) return;
-  openEditModal('comment', postId, commentId, null, comment.text);
+  getCloudData(STORAGE_POSTS).then(posts => {
+    const post = (posts || []).find(p => p.id === postId);
+    if (!post) return;
+    const comment = post.comments.find(c => c.id === commentId);
+    if (!comment) return;
+    openEditModal('comment', postId, commentId, null, comment.text);
+  });
 }
 
 async function deleteComment(postId, commentId) {
   if (!confirm('ต้องการลบคอมเมนต์นี้ใช่ไหม?')) return;
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let posts = await getCloudData(STORAGE_POSTS) || [];
   const post = posts.find(p => p.id === postId);
   if (!post) return;
   post.comments = post.comments.filter(c => c.id !== commentId);
-  
   await saveCloudData(STORAGE_POSTS, posts);
-  localStorage.setItem(STORAGE_POSTS, JSON.stringify(posts));
   renderFeed();
 }
 
 async function toggleLikeComment(postId, commentId) {
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let posts = await getCloudData(STORAGE_POSTS) || [];
   const post = posts.find(p => p.id === postId);
   if (!post) return;
   const comment = post.comments.find(c => c.id === commentId);
@@ -1262,7 +1270,6 @@ async function toggleLikeComment(postId, commentId) {
   else comment.likes.push(currentUser.email);
   
   await saveCloudData(STORAGE_POSTS, posts);
-  localStorage.setItem(STORAGE_POSTS, JSON.stringify(posts));
   renderFeed();
 }
 
@@ -1278,7 +1285,7 @@ async function addReply(postId, commentId) {
   const text = input.value.trim();
   if (!text) return;
 
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let posts = await getCloudData(STORAGE_POSTS) || [];
   const post = posts.find(p => p.id === postId);
   if (!post) return;
   const comment = post.comments.find(c => c.id === commentId);
@@ -1294,37 +1301,35 @@ async function addReply(postId, commentId) {
   });
 
   await saveCloudData(STORAGE_POSTS, posts);
-  localStorage.setItem(STORAGE_POSTS, JSON.stringify(posts));
   renderFeed();
 }
 
 function editReply(postId, commentId, replyId) {
-  let posts = JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
-  const post = posts.find(p => p.id === postId);
-  if (!post) return;
-  const comment = post.comments.find(c => c.id === commentId);
-  if (!comment) return;
-  const reply = comment.replies.find(r => r.id === replyId);
-  if (!reply) return;
-  openEditModal('reply', postId, commentId, replyId, reply.text);
+  getCloudData(STORAGE_POSTS).then(posts => {
+    const post = (posts || []).find(p => p.id === postId);
+    if (!post) return;
+    const comment = post.comments.find(c => c.id === commentId);
+    if (!comment) return;
+    const reply = comment.replies.find(r => r.id === replyId);
+    if (!reply) return;
+    openEditModal('reply', postId, commentId, replyId, reply.text);
+  });
 }
 
 async function deleteReply(postId, commentId, replyId) {
   if (!confirm('ต้องการลบการตอบกลับนี้ใช่ไหม?')) return;
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let posts = await getCloudData(STORAGE_POSTS) || [];
   const post = posts.find(p => p.id === postId);
   if (!post) return;
   const comment = post.comments.find(c => c.id === commentId);
   if (!comment) return;
   comment.replies = comment.replies.filter(r => r.id !== replyId);
-  
   await saveCloudData(STORAGE_POSTS, posts);
-  localStorage.setItem(STORAGE_POSTS, JSON.stringify(posts));
   renderFeed();
 }
 
 async function toggleLikeReply(postId, commentId, replyId) {
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let posts = await getCloudData(STORAGE_POSTS) || [];
   const post = posts.find(p => p.id === postId);
   if (!post) return;
   const comment = post.comments.find(c => c.id === commentId);
@@ -1337,12 +1342,11 @@ async function toggleLikeReply(postId, commentId, replyId) {
   else reply.likes.push(currentUser.email);
   
   await saveCloudData(STORAGE_POSTS, posts);
-  localStorage.setItem(STORAGE_POSTS, JSON.stringify(posts));
   renderFeed();
 }
 
 async function reportItem(targetType, targetId) {
-  let reports = await getCloudData(STORAGE_REPORTS) || JSON.parse(localStorage.getItem(STORAGE_REPORTS) || '[]');
+  let reports = await getCloudData(STORAGE_REPORTS) || [];
   reports.push({
     id: 'rep_' + Date.now(),
     reporter: currentUser.email,
@@ -1351,8 +1355,7 @@ async function reportItem(targetType, targetId) {
     createdAt: new Date().toLocaleString()
   });
   await saveCloudData(STORAGE_REPORTS, reports);
-  localStorage.setItem(STORAGE_REPORTS, JSON.stringify(reports));
-  alert('ส่งรายงานให้แอดมินเรียบร้อย! แอดมินจะใช้เวลาตรวจสอบและดำเนินการภายใน 1-2 วัน');
+  alert('ส่งรายงานให้แอดมินเรียบร้อย!');
 }
 
 async function openUserProfileModal(userEmail) {
@@ -1362,7 +1365,7 @@ async function openUserProfileModal(userEmail) {
     return;
   }
 
-  let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
+  let users = await getCloudData(STORAGE_USERS) || [];
   const targetUser = users.find(u => u.email.toLowerCase() === userEmail.toLowerCase());
   if (!targetUser) return alert('ไม่พบข้อมูลผู้ใช้นี้');
 
@@ -1391,7 +1394,7 @@ async function openUserProfileModal(userEmail) {
   const btnFollow = document.getElementById('btnFollowUser');
   btnFollow.innerText = followers.includes(currentUser.email) ? 'ยกเลิกการติดตาม' : 'ติดตาม';
 
-  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
+  let decks = await getCloudData(STORAGE_DECKS) || [];
   const userDecks = decks.filter(d => d.authorEmail && d.authorEmail.toLowerCase() === targetUser.email.toLowerCase() && d.privacy !== 'private');
   
   const decksListEl = document.getElementById('viewUserDecksList');
@@ -1409,7 +1412,7 @@ async function openUserProfileModal(userEmail) {
     `).join('');
   }
 
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
+  let posts = await getCloudData(STORAGE_POSTS) || [];
   const userPosts = posts.filter(p => p.authorEmail && p.authorEmail.toLowerCase() === targetUser.email.toLowerCase());
   const postsListEl = document.getElementById('viewUserPostsList');
   if (userPosts.length === 0) {
@@ -1432,7 +1435,7 @@ function closeUserProfileModal() {
 
 async function toggleFollowUser() {
   if (!viewTargetUser) return;
-  let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
+  let users = await getCloudData(STORAGE_USERS) || [];
 
   let target = users.find(u => u.email === viewTargetUser.email);
   let me = users.find(u => u.email === currentUser.email);
@@ -1450,7 +1453,6 @@ async function toggleFollowUser() {
   }
 
   await saveCloudData(STORAGE_USERS, users);
-  localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
   currentUser = me;
   localStorage.setItem(STORAGE_CURRENT_USER, JSON.stringify(currentUser));
   openUserProfileModal(target.email);
@@ -1466,7 +1468,7 @@ function openChatWithUser() {
 }
 
 async function renderChatUsersList() {
-  let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
+  let users = await getCloudData(STORAGE_USERS) || [];
   const list = document.getElementById('chatUsersList');
   const otherUsers = users.filter(u => u.email !== currentUser.email);
   const now = Date.now();
@@ -1494,7 +1496,7 @@ async function renderChatUsersList() {
 }
 
 async function renderChatMessages() {
-  let chats = await getCloudData(STORAGE_CHATS) || JSON.parse(localStorage.getItem(STORAGE_CHATS) || '{}');
+  let chats = await getCloudData(STORAGE_CHATS) || {};
   const chatKey = [currentUser.email, activeChatEmail].sort().join('_');
   const messages = chats[chatKey] || [];
 
@@ -1512,7 +1514,7 @@ async function sendChatMessage() {
   const text = input.value.trim();
   if (!text || !activeChatEmail) return;
 
-  let chats = await getCloudData(STORAGE_CHATS) || JSON.parse(localStorage.getItem(STORAGE_CHATS) || '{}');
+  let chats = await getCloudData(STORAGE_CHATS) || {};
   const chatKey = [currentUser.email, activeChatEmail].sort().join('_');
   chats[chatKey] = chats[chatKey] || [];
 
@@ -1523,7 +1525,6 @@ async function sendChatMessage() {
   });
 
   await saveCloudData(STORAGE_CHATS, chats);
-  localStorage.setItem(STORAGE_CHATS, JSON.stringify(chats));
   input.value = '';
   renderChatMessages();
 }
@@ -1555,7 +1556,7 @@ async function saveProfileChanges() {
   const newBio = document.getElementById('inputBio').value.trim();
   const fileInput = document.getElementById('inputNewAvatarFile');
 
-  let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
+  let users = await getCloudData(STORAGE_USERS) || [];
   let idx = users.findIndex(u => u.email === currentUser.email);
 
   if (idx !== -1) {
@@ -1568,7 +1569,6 @@ async function saveProfileChanges() {
         users[idx].avatarStatus = 'pending';
 
         await saveCloudData(STORAGE_USERS, users);
-        localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
         currentUser = users[idx];
         localStorage.setItem(STORAGE_CURRENT_USER, JSON.stringify(currentUser));
 
@@ -1581,7 +1581,6 @@ async function saveProfileChanges() {
     }
 
     await saveCloudData(STORAGE_USERS, users);
-    localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
     currentUser = users[idx];
     localStorage.setItem(STORAGE_CURRENT_USER, JSON.stringify(currentUser));
 
@@ -1593,11 +1592,11 @@ async function saveProfileChanges() {
 
 async function renderAdminDashboard() {
   if (!currentUser || !currentUser.isAdmin) return;
-  let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
-  let reports = await getCloudData(STORAGE_REPORTS) || JSON.parse(localStorage.getItem(STORAGE_REPORTS) || '[]');
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
-  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
-  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
+  let users = await getCloudData(STORAGE_USERS) || [];
+  let reports = await getCloudData(STORAGE_REPORTS) || [];
+  let posts = await getCloudData(STORAGE_POSTS) || [];
+  let decks = await getCloudData(STORAGE_DECKS) || [];
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || [];
   const container = document.getElementById('adminContainer');
 
   const pendingUsers = users.filter(u => u.customImg && u.avatarStatus === 'pending');
@@ -1668,48 +1667,42 @@ async function renderAdminDashboard() {
 async function deleteReportedItem(reportId, targetType, targetId) {
   if (!confirm('ยืนยันลบเนื้อหานี้ทิ้งตามที่มีผู้รายงานใช่หรือไม่?')) return;
 
-  let posts = await getCloudData(STORAGE_POSTS) || JSON.parse(localStorage.getItem(STORAGE_POSTS) || '[]');
-  let decks = await getCloudData(STORAGE_DECKS) || JSON.parse(localStorage.getItem(STORAGE_DECKS) || '[]');
-  let quizzes = await getCloudData(STORAGE_QUIZZES) || JSON.parse(localStorage.getItem(STORAGE_QUIZZES) || '[]');
-  let reports = await getCloudData(STORAGE_REPORTS) || JSON.parse(localStorage.getItem(STORAGE_REPORTS) || '[]');
+  let posts = await getCloudData(STORAGE_POSTS) || [];
+  let decks = await getCloudData(STORAGE_DECKS) || [];
+  let quizzes = await getCloudData(STORAGE_QUIZZES) || [];
+  let reports = await getCloudData(STORAGE_REPORTS) || [];
 
   if (targetType === 'post') {
     posts = posts.filter(p => p.id !== targetId);
     await saveCloudData(STORAGE_POSTS, posts);
-    localStorage.setItem(STORAGE_POSTS, JSON.stringify(posts));
   } else if (targetType === 'deck') {
     decks = decks.filter(d => d.id !== targetId);
     await saveCloudData(STORAGE_DECKS, decks);
-    localStorage.setItem(STORAGE_DECKS, JSON.stringify(decks));
   } else if (targetType === 'quiz') {
     quizzes = quizzes.filter(q => q.id !== targetId);
     await saveCloudData(STORAGE_QUIZZES, quizzes);
-    localStorage.setItem(STORAGE_QUIZZES, JSON.stringify(quizzes));
   }
 
   reports = reports.filter(r => r.id !== reportId);
   await saveCloudData(STORAGE_REPORTS, reports);
-  localStorage.setItem(STORAGE_REPORTS, JSON.stringify(reports));
 
   alert('ลบเนื้อหาและจัดการรายงานเรียบร้อยแล้ว');
   renderAdminDashboard();
 }
 
 async function dismissReport(reportId) {
-  let reports = await getCloudData(STORAGE_REPORTS) || JSON.parse(localStorage.getItem(STORAGE_REPORTS) || '[]');
+  let reports = await getCloudData(STORAGE_REPORTS) || [];
   reports = reports.filter(r => r.id !== reportId);
   await saveCloudData(STORAGE_REPORTS, reports);
-  localStorage.setItem(STORAGE_REPORTS, JSON.stringify(reports));
   renderAdminDashboard();
 }
 
 async function approveAvatar(email) {
-  let users = await getCloudData(STORAGE_USERS) || JSON.parse(localStorage.getItem(STORAGE_USERS) || '[]');
+  let users = await getCloudData(STORAGE_USERS) || [];
   let u = users.find(x => x.email === email);
   if (u) {
     u.avatarStatus = 'approved';
     await saveCloudData(STORAGE_USERS, users);
-    localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
     alert('อนุมัติรูปเรียบร้อย');
     renderAdminDashboard();
   }
